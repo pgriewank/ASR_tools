@@ -26,7 +26,7 @@ w_var_cbl  = 0.08   #Minimum vertical velocity variance used to determine cbl he
 w_min      =0.0
 directory_in  = '/data/testbed/lasso/sims/'
 directory_out = '/data/testbed/lasso/clustering/'
-dates  = ['20160611']
+dates  = ['bomex','20160611_micro']
 boundary_periodic =1
 sig_s_c_min_min = 1e-30
 z_cbl=10 #Minimum layer of convective boundary layer depth. Set to 10 because  BOMEX case has very low variances in the lowest layers. 
@@ -39,7 +39,7 @@ for date in dates:
 
     for filename in os.listdir(directory):
         if filename.endswith('.nc') and filename.startswith('couvreux'):
-            clustering_file = 'couvreux_'+dates+'_clustering_20sig_filt_v2.pkl'
+            clustering_file = 'couvreux_'+date+'_clustering_20sig_filt_v2.pkl'
             print('to be saved to: ',clustering_file)
             file_c_s  =  Dataset(directory+filename,read='r') 
             file_w   =  Dataset(directory+'w.nc',read='r') 
@@ -53,9 +53,9 @@ for date in dates:
             #loading dales profile to determine minimum base height
             
             if date == 'bomex':
-                file_micro    =  Dataset(directory_in+'bomex.default.0000000.nc',read='r')
+                file_micro    =  Dataset(directory_in+date+'/bomex.default.0000000.nc',read='r')
             else: 
-                file_micro    =  Dataset(directory_in+'testbed.default.0000000.nc',read='r')
+                file_micro    =  Dataset(directory_in+date+'/testbed.default.0000000.nc',read='r')
     
            
             #Just for development purposes
@@ -76,7 +76,7 @@ for date in dates:
                     z_cbl += 1
                     w_var = w2[z_cbl]
                     ql_lvl = ql[z_cbl]
-                print(z_cbl,w_var,ql_lvl)
+                print(' cbl height index: ',z_cbl, ', w var: ',str(w_var)[:5],', mean ql:', "{:.1e}".format(ql_lvl))
                 
                 
                 #First to get binary field of where couvreux fulfills c_s>mean(c_s)+max(sig_s_c,sig_min)
@@ -108,16 +108,15 @@ for date in dates:
                 w_binary_3d = grab_3d_binary_field(file_w,t,'w',w_min)
                 w_cs_binary_3d = c_s_binary_3d * w_binary_3d
                 
-                print('at timestep ',t,' total number of cells which fulfil w>0 and c_s conditions:')
-                print(len(w_cs_binary_3d[w_cs_binary_3d>0]))
-                print('which is in fraction',len(w_cs_binary_3d[w_cs_binary_3d>0])/(nx*ny*nz))
+                print('at timestep ',t,' total number of cells which fulfil w>0 and c_s conditions: ',len(w_cs_binary_3d[w_cs_binary_3d>0]))
+                print('which is in fraction',str(len(w_cs_binary_3d[w_cs_binary_3d>0])/(nx*ny*nz))[:5])
                 if np.max(w_cs_binary_3d)>0:
                     time1 = ttiimmee.time()
                     #cloud_cell_list,idx_3d_cloudy_cells  = cluster_3D_v2(w_cs_binary_3d,boundary_periodic)
                     cloud_cell_list,idx_3d_cloudy_cells  = cluster_3D_v2_filt(w_cs_binary_3d,boundary_periodic,z_cbl=z_cbl)
                     time2 = ttiimmee.time()
-                    print(' cluster_3D_v2_filt took',(time2-time1),'at timestep ',t)
-                    print(' for this many clusters which have a 8 cell extent and start below ',z_cbl,' levels ',len(cloud_cell_list),'and this many clouds number ',idx_3d_cloudy_cells.shape[1])
+                    print(' cluster_3D_v2_filt took',int((time2-time1)/60.),' seconds at timestep ',t)
+                    print(' for ',len(cloud_cell_list),' clusters which have an 8 cell extent and start below ',z_cbl,' levels ',len(cloud_cell_list),'and this many clouds number ',idx_3d_cloudy_cells.shape[1])
                     cloud_cell_list_time.append(cloud_cell_list)
                     idx_3d_cloudy_cells_time.append(idx_3d_cloudy_cells)
                 else:
