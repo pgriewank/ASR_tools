@@ -641,6 +641,9 @@ def func_vert_percentile(idx_z,idx_x,idx_y,var,percentile):
         vert_n[z]=len(ind[0])*1.0
     return vert_prof, vert_n
 
+###########################################################################################################################
+#Binning
+###########################################################################################################################
 
 
 #Creates the bins for a given width and max value
@@ -659,6 +662,61 @@ def linear_binner(width,var):
          CSD[b] = float(np.count_nonzero(ind==b+1))/width
 
      return bin_n, bins, ind, CSD
+
+
+#Based on linear binner, but immediately returns an array of a variable binned by another one.
+#Returns a nan where no data available in bin. 
+def var_linear_binner(var,bin_var,bin_width=100):
+    
+    bin_n, bins, ind, CSD =linear_binner(100,bin_var)
+    binned_var = np.zeros(bin_n)
+    for b in range(bin_n):
+        if max(ind==b+1):
+            binned_var[b] = np.nanmean(var[ind==b+1])
+        else:
+            binned_var[b] = 'nan'
+
+    return binned_var, bin_n, bins, CSD 
+                                                                                    
+#Creates the bins for a given width and max value
+#Bin width is logarithmic, starts with bin_min, and increases from there on out 
+#Then detects the indexes of which clouds are in which bin
+#Also directly calculates the cloud size distribution (CSD)
+#Before deviding by the width turn it into a CSD (cloud size density distribution)
+def log_binner(var,bin_min=0,step_ratio=2):
+    max_val   = max(var)
+    min_val   = min(var)
+    bin_min = max(min_val,bin_min)
+
+
+    log_bin_dist = np.log10(step_ratio)
+    max_log = np.log10(max_val/bin_min)
+
+    bins = bin_min*10**(np.arange(0,max_log+log_bin_dist,log_bin_dist))
+    bin_n = len(bins)-1
+    ind       = np.digitize(var,bins)
+    CSD       = np.zeros(bin_n)
+    for b in range(bin_n):
+
+        CSD[b] = float(np.count_nonzero(ind==b+1))/(bins[b+1]-bins[b])
+
+    return bin_n, bins, ind, CSD 
+
+
+#Based on linear binner, but immediately returns an array of a variable binned by another one.
+#Returns a nan where less than N_min points in bin. 
+def var_log_binner(var,bin_var,bin_min=0,step_ratio=2,N_min=10):
+
+    bin_n, bins, ind, CSD =log_binner(bin_var,bin_min=bin_min,step_ratio=step_ratio)
+    binned_var = np.zeros(bin_n)
+    for b in range(bin_n):
+        if len(ind[ind==b+1])>N_min:
+            binned_var[b] = np.nanmean(var[ind==b+1])
+        else:
+            binned_var[b] = 'nan'
+
+    return binned_var, bin_n, bins, CSD
+
 
 ###########################################################################################################################
 #Graveyard

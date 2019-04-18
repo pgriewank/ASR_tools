@@ -127,6 +127,15 @@ for date in dates:
                print('saved clustering results via pickle in ',directory_out+clustering_file)
             
                pickle.dump([ cloud_cell_list_time,idx_3d_cloudy_cells_time],f)
+               print(':')
+               print(':')
+               print(':')
+               print(':')
+               print(':')
+               print(':')
+               print(':')
+               print(':')
+               print(':')
     
     
     
