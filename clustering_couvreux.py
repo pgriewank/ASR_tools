@@ -43,8 +43,8 @@ for date in dates:
             print('to be saved to: ',clustering_file)
             file_c_s  =  Dataset(directory+filename,read='r') 
             file_w   =  Dataset(directory+'w.nc',read='r') 
-            file_ql  =  Dataset(directory+'ql.nc',read='r') 
-            timesteps = len(file_ql.variables['time'][:])
+            #file_ql  =  Dataset(directory+'ql.nc',read='r') 
+            timesteps = len(file_w.variables['time'][:])
             #timesteps = 4
             nz,nx,ny = get_zxy_dimension(directory+filename,'couvreux')
             cloud_cell_list_time = []
