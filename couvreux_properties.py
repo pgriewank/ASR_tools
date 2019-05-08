@@ -1,6 +1,6 @@
 #todo
 #make timesteps adaptive
-
+#read in dz
 
 
 import numpy as np

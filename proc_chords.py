@@ -321,7 +321,7 @@ def proc_chords(          date_str='20160611',
                 
                 #to get the fake time vector we load the wind from the profile data, which devided by the grid spacing gives us a fake time resolution
                 #we use the calculated cbl+300 meter or lcl as reference height 
-                ref_lvl = cbl_1d_prof[tt]
+                ref_lvl = cbl_1d_prof[it]
 
                 u_ref = file_prof['u'][it,ref_lvl]
                 v_ref = file_prof['v'][it,ref_lvl]
@@ -536,133 +536,39 @@ def proc_chords(          date_str='20160611',
     print(':')
     print(':')
 
-def func_curtain_reg(input_2d_field):
-    #function regularizes to cloud base
-    #2019-03-20: added smoother to hopefully avoid impact of harsch jumps
-    #2019-03-28: Added simplified version for base_smoothing_flag == 2 which gets rid of 1D pre interpolation 
-    #I originally used interp2d, tried griddata but it was a lot slower
-    
-    #Calculating the regularized t axis but for original resolution
-    #It is expected to go a bit beyond -1.5 and 1.5, total width defined by curtain_extra
-    #takes the original time vector, subtracts it by mean time, then scales it by 1/(time_end_chord-time_beg_chord)
-    t_reg_orig = t_1d[idx_beg_curtain:idx_end_curtain]-(time_beg_chord+time_end_chord)/2.
-    t_reg_orig = t_reg_orig/(time_end_chord-time_beg_chord)
-
-    #Now we calculate the new regularized grid with the correct vertical but low/original horizontal/time resolution
-    #mesh_t_low_z_high_x,mesh_t_low_z_high_z = np.meshgrid(t_reg_orig,z_reg_mid) #seems not to be needed
-    var_t_low_z_high = np.zeros([curtain_cells,n_z_reg])
-
-
-    #introducing z_idx_base vector
-    #Assigning reference cloud base where no cloud present
-    z_idx_base=cl_base*1.0+0.0
-    z_idx_base[:] = z_idx_base_default
-    for i in range(idx_beg_chord,idx_end_chord):
-        if i>idx_beg_chord-1 and i<idx_end_chord and cl_base[i]<cbl_1d[i]:
-                z_idx_base[i] = cl_base[i]
-            
-    
-
-    #Here the smoother comes into play:
-    #We started with a simple 5 cell running mean, 
-    #But now we are making it a function of the chordlength, using a 0.1 running mean
-    
-    if base_smoothing_flag ==1:
-        z_idx_base_smooth = z_idx_base*1.0
-        N = int(np.floor(idx_end_chord-idx_beg_chord)*0.1)
-        for i in range(idx_beg_chord-N,idx_end_chord+N):
-            z_idx_base_smooth[i] = sum(z_idx_base[i-N:i+N])/(2*N)
-        z_idx_base[:] = z_idx_base_smooth[:]
-        
-    if base_smoothing_flag==2:
-        #just put the percentile back
-
-        z_idx_base[:] = z_idx_base_default
-        
-        
-    
-    
-        
-        
-    #default version for variable base height    
-    if base_smoothing_flag<2:
-        #Now for each of the columns of the original curtain a vertical interpolation is done
-        for i in range(idx_beg_curtain,idx_end_curtain):
-
-            #assigining column value
-
-            var_orig_col = input_2d_field[:,i]
 
 
 
 
 
-            #Regularizing the z axes so that cloud base is at 1
-            d_z_tmp = 1.0/z_idx_base[i]
-            nz = var_orig_col.shape[0]
-            z_reg_orig_top = d_z_tmp*nz- d_z_tmp/2
-            z_reg_orig = np.linspace(0+d_z_tmp/2,z_reg_orig_top,nz)
+import sys
+sys.path.insert(0, "/home/pgriewank/code/2019-chords-plumes/")
+import numpy as np
+import math
+from netCDF4 import Dataset
+import os
+import time as ttiimmee
+from scipy.interpolate import interp1d
+from scipy.interpolate import interp2d
+#from scipy.interpolate import griddata
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+import pickle
 
-            #HAve to add 0  to the z_reg_orig to enable interpolation 
-            z_reg_orig = np.hstack([[0],z_reg_orig])
-            var_orig_col   = np.hstack([var_orig_col[0],var_orig_col])
+from unionfind import UnionFind
+from cusize_functions import *
+#from proc_chords import *
 
-
-            #1D vertical interpolation to get the right columns and asign them one by one to w_x_low_z_high
-            f = interp1d(z_reg_orig, var_orig_col, kind='next')
-            try:
-
-                var_reg_inter = f(z_reg_mid)
-            except:
-                print(z_idx_base[i])
-                #plt.plot(z_idx_base[c])
-                print(z_reg_orig)
-                print(z_reg_mid)
-
-            var_t_low_z_high[i-idx_beg_curtain,:] = var_reg_inter
-
-        #Now that w_x_low_z_high we have to interpolate 2D onto the rull regularized grid
-        #print(t_reg_orig.shape,z_reg_mid.shape)
-        f = interp2d(t_reg_orig, z_reg_mid, var_t_low_z_high.transpose(), kind='linear')
-        var_curtain = f(t_reg_mid,z_reg_mid)
-    
-    
-    #constant base height version
-    if base_smoothing_flag==2:
-        #Regularizing the z axes so that cloud base is at 1, since z_idx_base is the same everywhere I just use idx_beg_curtain as one. 
-        i=idx_beg_curtain
-        d_z_tmp = 1.0/z_idx_base[i]
-        var_orig_2d = input_2d_field[:,idx_beg_curtain:idx_end_curtain]
-
-        nz = var_orig_2d.shape[0]
-        z_reg_orig_top = d_z_tmp*nz- d_z_tmp/2
-        z_reg_orig = np.linspace(0+d_z_tmp/2,z_reg_orig_top,nz)
-        
-        #Have to add 0  to the z_reg_orig to enable interpolation 
-        z_reg_orig    = np.hstack([[0],z_reg_orig])
-        var_orig_2d   = np.vstack([var_orig_2d[0,:],var_orig_2d])
-
-        
-        f = interp2d(t_reg_orig, z_reg_orig,var_orig_2d, kind='linear')
-        var_curtain = f(t_reg_mid,z_reg_mid)
-
-        
-    
-    
-    
-    
-    
-    return var_curtain
-
+import matplotlib.pyplot as plt
+import pandas as pd
+import gc
 
 
 
 #turned into a function
 #removed the possibility to loop over multiple dates, if you want to do that call the function repeatedly 
 #Should be able to work for any variable in the column output, or for any 3D variable as long as it is named the same as the file. 
-#Changing 3D output
-#Default is now to always go over x and y directions
-#If scaling is applied 
+#If the input data is a 3D field it will always go over x and y directions
+#Two different scale_flags added to rotate the curtain to point upwind. 
 
 #TODO
 #plot_flag disabled for the mean time
@@ -683,7 +589,8 @@ def proc_beard_regularize(reg_var = 'w',
                           size_bin_flag=0,
                           N_bins=12,
                           bin_size = 250,
-                          curtain_extra = 1.0
+                          curtain_extra = 1.0,
+                          chord_max = 1e9
                          ):
 
     # reg_var = variable that will be regularized
@@ -691,6 +598,8 @@ def proc_beard_regularize(reg_var = 'w',
     # data_dim_flag: 1 = column, 3 = 3D snapshot
     # time_slice_curtain: 0 only puts out the total sums, 1: adds a seperate output for each time slice, is needed for scale_flag
     # scale_flag: If 0, nothing, if 1, it scales the output by u/sqrt(u^2+v^2) and flips the vector if u>0. Is set to 0 if data_dim_flag==1
+    #             1 the ref_lvl used is determined from the mean cloud base height 
+    #             2, similar to 1 but now using a profile
     #
     # base_smoothing_flag: 0 use mix of percentile and cloud base as done my Neil, 1: smooth out base after setting it with running average 2: just use percentile defined by base_percentile
     # base_percentile: percentile used to find chordlength bottom
@@ -700,7 +609,8 @@ def proc_beard_regularize(reg_var = 'w',
     # N_it_max = maximum number of iterables, 3D timesteps or column files. Used for testing things quickly
     # size_bin_flag bins the beards by their chord_lenth. Currently using 8 bins of 250 meters length to get started. The lowest bin should be empty, because we only calculate curtains when at least curtain_min is used
     # curtain_extra: Regularized chord length before and after in the curtain, default is 1
-    
+    # chord_max: Maximum number of chords. If data_dim_flag=3 it will jump to the y direction when chord_max/2 is reached
+
     directory_output = 'data_curtains/'
 
 
@@ -720,7 +630,7 @@ def proc_beard_regularize(reg_var = 'w',
     # #1D clustering parameters, 
     #set super strict 
     if chord_times == 1:
-        t_gap = 0.#should be pretty strict gaps allowed!
+        t_gap = 0.#No gaps allowed!
         t_min = 0
         t_max = 1e9
         cell_min = 10 #Minimal number of cells needed per chord
@@ -731,6 +641,7 @@ def proc_beard_regularize(reg_var = 'w',
     ql_min = 1e-5
 
     z_min  = 10 #Index of minimum  z_vlvl of the cbl
+    #z_min  = 0 #Index of minimum  z_vlvl of the cbl
 
 
     #Flag clean up
@@ -763,7 +674,125 @@ def proc_beard_regularize(reg_var = 'w',
     'curtain_extra':curtain_extra
     }
     
+    #moved to an inner function to avoid issues with global and local variables 
+    def func_curtain_reg(input_2d_field):
+        #function regularizes to cloud base
+        #2019-03-20: added smoother to hopefully avoid impact of harsch jumps
+        #2019-03-28: Added simplified version for base_smoothing_flag == 2 which gets rid of 1D pre interpolation 
+        #I originally used interp2d, tried griddata but it was a lot slower
+        
+        #Calculating the regularized t axis but for original resolution
+        #It is expected to go a bit beyond -1.5 and 1.5, total width defined by curtain_extra
+        #takes the original time vector, subtracts it by mean time, then scales it by 1/(time_end_chord-time_beg_chord)
+        t_reg_orig = t_1d[idx_beg_curtain:idx_end_curtain]-(time_beg_chord+time_end_chord)/2.
+        t_reg_orig = t_reg_orig/(time_end_chord-time_beg_chord)
     
+        #Now we calculate the new regularized grid with the correct vertical but low/original horizontal/time resolution
+        #mesh_t_low_z_high_x,mesh_t_low_z_high_z = np.meshgrid(t_reg_orig,z_reg_mid) #seems not to be needed
+        var_t_low_z_high = np.zeros([curtain_cells,n_z_reg])
+    
+    
+        #introducing z_idx_base vector
+        #Assigning reference cloud base where no cloud present
+        z_idx_base=cl_base*1.0+0.0
+        z_idx_base[:] = z_idx_base_default
+        for i in range(idx_beg_chord,idx_end_chord):
+            if i>idx_beg_chord-1 and i<idx_end_chord and cl_base[i]<cbl_1d[i]:
+                    z_idx_base[i] = cl_base[i]
+                
+        
+    
+        #Here the smoother comes into play:
+        #We started with a simple 5 cell running mean, 
+        #But now we are making it a function of the chordlength, using a 0.1 running mean
+        
+        if base_smoothing_flag ==1:
+            z_idx_base_smooth = z_idx_base*1.0
+            N = int(np.floor(idx_end_chord-idx_beg_chord)*0.1)
+            for i in range(idx_beg_chord-N,idx_end_chord+N):
+                z_idx_base_smooth[i] = sum(z_idx_base[i-N:i+N])/(2*N)
+            z_idx_base[:] = z_idx_base_smooth[:]
+            
+        if base_smoothing_flag==2:
+            #just put the percentile back
+    
+            z_idx_base[:] = z_idx_base_default
+            
+            
+        
+        
+            
+            
+        #default version for variable base height    
+        if base_smoothing_flag<2:
+            #Now for each of the columns of the original curtain a vertical interpolation is done
+            for i in range(idx_beg_curtain,idx_end_curtain):
+    
+                #assigining column value
+    
+                var_orig_col = input_2d_field[:,i]
+    
+    
+    
+    
+    
+                #Regularizing the z axes so that cloud base is at 1
+                d_z_tmp = 1.0/z_idx_base[i]
+                nz = var_orig_col.shape[0]
+                z_reg_orig_top = d_z_tmp*nz- d_z_tmp/2
+                z_reg_orig = np.linspace(0+d_z_tmp/2,z_reg_orig_top,nz)
+    
+                #HAve to add 0  to the z_reg_orig to enable interpolation 
+                z_reg_orig = np.hstack([[0],z_reg_orig])
+                var_orig_col   = np.hstack([var_orig_col[0],var_orig_col])
+    
+    
+                #1D vertical interpolation to get the right columns and asign them one by one to w_x_low_z_high
+                f = interp1d(z_reg_orig, var_orig_col, kind='next')
+                try:
+    
+                    var_reg_inter = f(z_reg_mid)
+                except:
+                    print(z_idx_base[i])
+                    #plt.plot(z_idx_base[c])
+                    print(z_reg_orig)
+                    print(z_reg_mid)
+    
+                var_t_low_z_high[i-idx_beg_curtain,:] = var_reg_inter
+    
+            #Now that w_x_low_z_high we have to interpolate 2D onto the rull regularized grid
+            #print(t_reg_orig.shape,z_reg_mid.shape)
+            f = interp2d(t_reg_orig, z_reg_mid, var_t_low_z_high.transpose(), kind='linear')
+            var_curtain = f(t_reg_mid,z_reg_mid)
+        
+        
+        #constant base height version
+        if base_smoothing_flag==2:
+            #Regularizing the z axes so that cloud base is at 1, since z_idx_base is the same everywhere I just use idx_beg_curtain as one. 
+            i=idx_beg_curtain
+            d_z_tmp = 1.0/z_idx_base[i]
+            var_orig_2d = input_2d_field[:,idx_beg_curtain:idx_end_curtain]
+    
+            nz = var_orig_2d.shape[0]
+            z_reg_orig_top = d_z_tmp*nz- d_z_tmp/2
+            z_reg_orig = np.linspace(0+d_z_tmp/2,z_reg_orig_top,nz)
+            
+            #Have to add 0  to the z_reg_orig to enable interpolation 
+            z_reg_orig    = np.hstack([[0],z_reg_orig])
+            var_orig_2d   = np.vstack([var_orig_2d[0,:],var_orig_2d])
+    
+            
+            f = interp2d(t_reg_orig, z_reg_orig,var_orig_2d, kind='linear')
+            var_curtain = f(t_reg_mid,z_reg_mid)
+    
+            
+        
+        
+        
+        
+        
+        return var_curtain
+
     
     
     #Creating regularized grid.
@@ -1025,7 +1054,7 @@ def proc_beard_regularize(reg_var = 'w',
                 
                 #to get the fake time vector we load the wind from the profile data, which devided by the grid spacing gives us a fake time resolution
                 #we use the calculated cbl+300 meter or lcl as reference height 
-                ref_lvl = cbl_1d_prof[tt]
+                ref_lvl = cbl_1d_prof[it]
 
                 u_ref = file_prof['u'][it,ref_lvl]
                 v_ref = file_prof['v'][it,ref_lvl]
@@ -1039,21 +1068,14 @@ def proc_beard_regularize(reg_var = 'w',
                 #    print('changed t_gap to:', t_gap)
 
                 print('time iterative, V_ref, time_resolution',it, V_ref, time_resolution )
+                print('ref_lvl used to determine reference winds',ref_lvl )
                 #fake t vector, 
                 t_1d = np.linspace(0,2*nx*ny*time_resolution,2*nx*ny)#+nx*ny*time_resolution*it
                 #dt_1d   = t_1d*0
                 #dt_1d[1:] = t_1d[1:]-t_1d[:-1]   
                 
-
-                #calculate scaling factors if needed
-                if scale_flag == 1:
-
-                    scaling_factor_x = u_ref/np.sqrt(u_ref**2+v_ref**2)
-                    scaling_factor_y = v_ref/np.sqrt(u_ref**2+v_ref**2)
-                    print('Scaling: u_ref: ,',u_ref,' v_ref: ', v_ref, ' scaling factor_x: ',scaling_factor_x,' scaling factor_y: ',scaling_factor_y,)
-
-
-
+                
+                
             else:
                 #If no clouds are present we pass a very short empty fields over to the chord searcher
                 print('skipping timestep: ',it,' cause no clouds')
@@ -1085,7 +1107,7 @@ def proc_beard_regularize(reg_var = 'w',
         #Use to have a different method using nans that doesn:t work anymore somehow. Now I just set it really high where there is no cloud. 
         for t in range(nt):
             if np.max(ql_2d[:,t])>ql_min :
-                cl_base[t]=np.argmax(ql_2d[:,t]>1e-6)
+                cl_base[t]=np.argmax(ql_2d[:,t]>ql_min)
             else:
                 cl_base[t]=10000000
 
@@ -1097,6 +1119,51 @@ def proc_beard_regularize(reg_var = 'w',
         cbl_cl_binary = cl_base*0
         cbl_cl_binary[cbl_cl_idx]=1
         t_cbl_cl=t_1d[cbl_cl_idx]
+        
+        
+        #Scaling between x and y is calculated here if required. Is skipped if there are less than 2 timesteps, which is what is assigned when no clouds are present  
+        
+        if scale_flag > 0 and t_1d.shape[0]>3:
+            #calculate the profiles of u and v and their scaling
+            u_ref_prof = file_prof['u'][it,:]
+            v_ref_prof = file_prof['v'][it,:]
+            V_ref_prof = np.sqrt(u_ref_prof**2+v_ref_prof**2) 
+            scaling_factor_x_prof = u_ref_prof/V_ref_prof
+            scaling_factor_y_prof = v_ref_prof/V_ref_prof
+            
+            #Using the mean cloud base height as the reference lvl
+            ref_idx = np.mean(cl_base[cbl_cl_idx])
+            
+            if scale_flag == 1:
+                #a new reference level is com
+
+                scaling_factor_x = scaling_factor_x_prof[int(ref_idx)]
+                scaling_factor_y = scaling_factor_y_prof[int(ref_idx)]
+
+                print('Scaling flag 1:  scaling factor_x: ',scaling_factor_x,' scaling factor_y: ',scaling_factor_y, ' int(ref_idx): ',int(ref_idx))
+
+            if scale_flag == 2:
+            
+                #Regularizing the scaling profiles and interpolation them onto the regularized z axis 
+                d_z_tmp = 1.0/ref_idx
+                nz = scaling_factor_x_prof.shape[0]
+                z_reg_orig_top = d_z_tmp*nz-d_z_tmp/2
+                z_reg_orig = np.linspace(0+d_z_tmp/2,z_reg_orig_top,nz)
+
+                #HAve to add 0  to the z_reg_orig to enable interpolation 
+                z_reg_orig = np.hstack([[0],z_reg_orig])
+                scaling_factor_x_prof_ext   = np.hstack([scaling_factor_x_prof[0],scaling_factor_x_prof])
+                scaling_factor_y_prof_ext   = np.hstack([scaling_factor_y_prof[0],scaling_factor_y_prof])
+
+
+                #1D vertical interpolation to get the right columns and asign them one by one to w_x_low_z_high
+                f_x = interp1d(z_reg_orig, scaling_factor_x_prof_ext, kind='next')
+                f_y = interp1d(z_reg_orig, scaling_factor_y_prof_ext, kind='next')
+                scaling_factor_x_inter = f_x(z_reg_mid)
+                scaling_factor_y_inter = f_y(z_reg_mid)
+
+                print('Scaling flag 2:, mean scaling_factor_x_inter: ',np.mean(scaling_factor_x_inter),
+                      ' mean scaling_factor_y_inter: ',np.mean(scaling_factor_x_inter))
 
 
         ### Clustering 1D
@@ -1119,7 +1186,8 @@ def proc_beard_regularize(reg_var = 'w',
         print('iterating through step ',it,'which contains ',len(cbl_cl_idx),'cloudy columns')
 
 
-        while t_cloudy_idx < len(cbl_cl_idx)-1:# and n_curtain<100*it:      ####################################GO HERE TO SET MAXIMUM CURTAIN
+        while t_cloudy_idx < len(cbl_cl_idx)-1 and n_chords<chord_max: 
+                
             #print('t_chord_begin',t_chord_begin)
             t_chord_begin = t_cloudy_idx
             #now connecting all cloudy indexes
@@ -1176,10 +1244,7 @@ def proc_beard_regularize(reg_var = 'w',
                         #First thing to do is calculate the chord base using the 25 percentile in agreement with Neil
                         z_idx_base_default = math.floor(np.percentile(cl_base[cbl_cl_idx[t_chord_begin:t_cloudy_idx]],base_percentile))
 
-                        #Regularized curtains, I am too lazy to pass on all my variables to func_curtain_reg so I use something that everyone says is horrible
-                        #and make all local variables global ones :)
-                        #print('idx_beg_curtain: ',idx_beg_curtain,' idx_end_curtain: ',idx_end_curtain )
-                        globals().update(locals())
+                        #Regularized curtains, I am too lazy to pass on all my variables to func_curtain_reg so I instead made it a nested function
                         var_curtain_tmp = (func_curtain_reg(var_2d)).transpose()
                         
 
@@ -1188,42 +1253,49 @@ def proc_beard_regularize(reg_var = 'w',
                         w_tmp = w_2d[cl_base[cbl_cl_idx[t_chord_begin:t_cloudy_idx]]-1,cbl_cl_idx[t_chord_begin:t_chord_end]]
                         #print(w_tmp)
                             
-                        if scale_flag==0:
-                            var_curtain_sum  = var_curtain_sum+var_curtain_tmp
-                            if np.mean(w_tmp)>0.:
-                                n_curtain_up += 1
-                                var_curtain_up_sum += var_curtain_tmp
-                            elif np.mean(w_tmp)<0.:
-                                n_curtain_dw += 1
-                                var_curtain_dw_sum += var_curtain_tmp
-                            else:
-                                print('wtf how is this zero: ',np.mean(w_tmp),w_tmp)
-
+                        
                         #Scaling is now added here, 
                         #Things are applied twice so that deviding by n it comes out fin
                         #We assume here that n_x and n_y are roughly same
                         #Could be made cleaner later on
-                        if scale_flag==1 and data_dim_flag==3:
-                            #find out if we need scaling_factor_x or y by seeing if we are in the first or second half
-                            if idx_end_curtain<nt/2:
-                                scaling_factor = 2*scaling_factor_x
-                            else:
-                                scaling_factor = 2*scaling_factor_y
-                                
-                            
-                            if scaling_factor>0:
-                                var_curtain_tmp = var_curtain_tmp[::-1,:]
-                                
-                            var_curtain_sum    = var_curtain_sum+abs(scaling_factor) * var_curtain_tmp
-                            if np.mean(w_tmp)>0.:
-                                n_curtain_up += 1
-                                var_curtain_up_sum += abs(scaling_factor) * var_curtain_tmp
-                            elif np.mean(w_tmp)<0.:
-                                n_curtain_dw += 1
-                                var_curtain_dw_sum += abs(scaling_factor) * var_curtain_tmp
-                            else:
-                                print('wtf how is this zero: ',np.mean(w_tmp),w_tmp)
-                                
+                        if scale_flag>0 and data_dim_flag==3:
+    
+                            if scale_flag==1:
+                                #find out if we need scaling_factor_x or y by seeing if we are in the first or second half
+                                if idx_end_curtain<nt/2:
+                                    scaling_factor = 2*scaling_factor_x
+                                else:
+                                    scaling_factor = 2*scaling_factor_y
+
+                                if scaling_factor>0:
+                                    var_curtain_tmp = var_curtain_tmp[::-1,:]
+
+                                var_curtain_tmp = abs(scaling_factor) * var_curtain_tmp
+
+                            if scale_flag==2:
+                                if idx_end_curtain<nt/2:
+                                    scaling_factor_prof = 2*scaling_factor_x_inter
+                                else:
+                                    scaling_factor_prof = 2*scaling_factor_y_inter
+
+                                for n_prof in range(scaling_factor_prof.shape[0]):
+                                    if scaling_factor_prof[n_prof]>0:
+                                        var_curtain_tmp[:,n_prof] = var_curtain_tmp[::-1,n_prof]
+                                    var_curtain_tmp [:,n_prof]= abs(scaling_factor_prof[n_prof])*var_curtain_tmp[:,n_prof]
+
+                        #Now adding the var_curtain_tmp to the sums
+                        var_curtain_sum    = var_curtain_sum+var_curtain_tmp
+                        if np.mean(w_tmp)>0.:
+                            n_curtain_up += 1
+                            var_curtain_up_sum +=  var_curtain_tmp
+                        elif np.mean(w_tmp)<0.:
+                            n_curtain_dw += 1
+                            var_curtain_dw_sum +=  var_curtain_tmp
+                        else:
+                            print('wtf how is this zero: ',np.mean(w_tmp),w_tmp)
+
+                        
+                        #globals().update(locals())
                         
                         ###############################################################################################################################################
                         ################## SIZE BINNING  ##############################################################################################################
@@ -1241,8 +1313,8 @@ def proc_beard_regularize(reg_var = 'w',
                             ch_duration  = t_cbl_cl[t_chord_end]-t_cbl_cl[t_chord_begin]
                             chord_length = ch_duration*V_ref
 
-                            if scale_flag==0:
-                                scaling_factor=1.
+                            #if scale_flag==0:
+                            #    scaling_factor=1.
                             
                                 
                             #find index of bin close to mid size bin
@@ -1250,14 +1322,14 @@ def proc_beard_regularize(reg_var = 'w',
                             if bin_idx.size>0:
                                 #print('bin_idx,chord_length',bin_idx,chord_length)
                                 n_curtain_bin[bin_idx] += 1                                                   
-                                var_curtain_bin_sum[bin_idx,:,:]    = var_curtain_bin_sum[bin_idx,:,:]+abs(scaling_factor) * var_curtain_tmp
+                                var_curtain_bin_sum[bin_idx,:,:]    = var_curtain_bin_sum[bin_idx,:,:] + var_curtain_tmp
 
                                 if np.mean(w_tmp)>0.:
                                     n_curtain_bin_up[bin_idx] += 1
-                                    var_curtain_bin_up_sum[bin_idx,:,:] += abs(scaling_factor) * var_curtain_tmp
+                                    var_curtain_bin_up_sum[bin_idx,:,:] +=  var_curtain_tmp
                                 elif np.mean(w_tmp)<0.:
                                     n_curtain_bin_dw[bin_idx] += 1
-                                    var_curtain_bin_dw_sum[bin_idx,:,:] += abs(scaling_factor) * var_curtain_tmp
+                                    var_curtain_bin_dw_sum[bin_idx,:,:] +=  var_curtain_tmp
                                 else:
                                     print('wtf how is this zero: ',np.mean(w_tmp),w_tmp)
                             
@@ -1273,6 +1345,14 @@ def proc_beard_regularize(reg_var = 'w',
                         #If the plot flag is set the pre regularization curtains are plotted. 
                         if plot_curtains_flag ==1:
                             print('plotting not implemented yet')
+                    
+                    ##############################################################################################################################
+                    #switching to y direction if half of max chords reached
+                    ##############################################################################################################################
+                    if n_chords == int(chord_max/2):
+                        t_cloudy_idx = int(len(cbl_cl_idx)/2)
+                        
+            
 
 
 
@@ -1287,7 +1367,11 @@ def proc_beard_regularize(reg_var = 'w',
     save_string_base = '_curt_'+date+'_d'+str(data_dim_flag)+'_cb'+str(base_smoothing_flag)+'_an'+str(anomaly_flag)+'_ct'+str(chord_times)+'_'+special_name+'_N'+str(n_curtain)
 
     if scale_flag ==1:
-        save_string_base = save_string_base+'_scaled'
+        save_string_base = save_string_base+'_scaled1'
+        print('scaling added to save_string_base '+save_string_base)
+    if scale_flag ==2:
+        save_string_base = save_string_base+'_scaled2'
+        print('scaling added to save_string_base '+save_string_base)
     
     save_string = 'data_curtains/'+ reg_var+save_string_base
     #if data_dim_flag==3:
