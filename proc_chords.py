@@ -22,6 +22,7 @@ from cusize_functions import *
 import matplotlib.pyplot as plt
 import pandas as pd
 import gc
+import glob
 
 
 #turned into a function
@@ -94,13 +95,21 @@ def proc_chords(          date_str='20160611',
     print('looking into date: ',date)
     if data_dim_flag==1:
         filename_column = []
-        if date_str=='bomex':
-            filename_column.append(directory_input+date+'/bomex.column.00512.00512.0000000.nc')
-        else:
-            #filename_column.append(directory_input+date+'/testbed.column.00000.00000.0000000.nc')
-            #filename_column.append(directory_input+date+'/testbed.column.00000.00512.0000000.nc')
-            #filename_column.append(directory_input+date+'/testbed.column.00512.00000.0000000.nc')
-            filename_column.append(directory_input+date+'/testbed.column.00512.00512.0000000.nc')
+        #uses glob to get all files which contain column.
+        column_files =     glob.glob(directory_input+date+'/*.column.*.*.*.nc')
+         
+        for c_file in column_files:
+            filename_column.append(c_file)
+            print('filename column included:',c_file)
+       # 
+       # 
+       # if date_str=='bomex':
+       #     filename_column.append(directory_input+date+'/bomex.column.00512.00512.0000000.nc')
+       # else:
+       #     #filename_column.append(directory_input+date+'/testbed.column.00000.00000.0000000.nc')
+       #     #filename_column.append(directory_input+date+'/testbed.column.00000.00512.0000000.nc')
+       #     #filename_column.append(directory_input+date+'/testbed.column.00512.00000.0000000.nc')
+       #     filename_column.append(directory_input+date+'/testbed.column.00512.00512.0000000.nc')
     if data_dim_flag==3:
         filename_w   = directory_input+date+'/w.nc'
         filename_l   = directory_input+date+'/ql.nc'
@@ -541,29 +550,29 @@ def proc_chords(          date_str='20160611',
 
 
 
-import sys
-sys.path.insert(0, "/home/pgriewank/code/2019-chords-plumes/")
-import numpy as np
-import math
-from netCDF4 import Dataset
-import os
-import time as ttiimmee
-from scipy.interpolate import interp1d
-from scipy.interpolate import interp2d
-#from scipy.interpolate import griddata
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-import pickle
-
-from unionfind import UnionFind
-from cusize_functions import *
-#from proc_chords import *
-
-import matplotlib.pyplot as plt
-import pandas as pd
-import gc
-
-
-
+#import sys
+#sys.path.insert(0, "/home/pgriewank/code/2019-chords-plumes/")
+#import numpy as np
+#import math
+#from netCDF4 import Dataset
+#import os
+#import time as ttiimmee
+#from scipy.interpolate import interp1d
+#from scipy.interpolate import interp2d
+##from scipy.interpolate import griddata
+#from mpl_toolkits.axes_grid1 import make_axes_locatable
+#import pickle
+#
+#from unionfind import UnionFind
+#from cusize_functions import *
+##from proc_chords import *
+#
+#import matplotlib.pyplot as plt
+#import pandas as pd
+#import gc
+#
+#
+#
 #turned into a function
 #removed the possibility to loop over multiple dates, if you want to do that call the function repeatedly 
 #Should be able to work for any variable in the column output, or for any 3D variable as long as it is named the same as the file. 
@@ -835,13 +844,19 @@ def proc_beard_regularize(reg_var = 'w',
     print('looking into date: ',date)
     if data_dim_flag==1:
         filename_column = []
-        if date_str=='bomex':
-            filename_column.append(directory_input+date+'/bomex.column.00512.00512.0000000.nc')
-        else:
-            #filename_column.append(directory_input+date+'/testbed.column.00000.00000.0000000.nc')
-            #filename_column.append(directory_input+date+'/testbed.column.00000.00512.0000000.nc')
-            #filename_column.append(directory_input+date+'/testbed.column.00512.00000.0000000.nc')
-            filename_column.append(directory_input+date+'/testbed.column.00512.00512.0000000.nc')
+        #uses glob to get all files which contain column.
+        column_files =     glob.glob(directory_input+date+'/*.column.*.*.*.nc')
+         
+        for c_file in column_files:
+            filename_column.append(c_file)
+            print('filename column included:',c_file)
+        #if date_str=='bomex':
+        #    filename_column.append(directory_input+date+'/bomex.column.00512.00512.0000000.nc')
+        #else:
+        #    #filename_column.append(directory_input+date+'/testbed.column.00000.00000.0000000.nc')
+        #    #filename_column.append(directory_input+date+'/testbed.column.00000.00512.0000000.nc')
+        #    #filename_column.append(directory_input+date+'/testbed.column.00512.00000.0000000.nc')
+        #    filename_column.append(directory_input+date+'/testbed.column.00512.00512.0000000.nc')
     if data_dim_flag==3:
         filename_w   = directory_input+date+'/w.nc'
         filename_l   = directory_input+date+'/ql.nc'
@@ -1364,14 +1379,17 @@ def proc_beard_regularize(reg_var = 'w',
 
         print('curtain processing:',(time3-time2)*1.0,)
     
-    save_string_base = '_curt_'+date+'_d'+str(data_dim_flag)+'_cb'+str(base_smoothing_flag)+'_an'+str(anomaly_flag)+'_ct'+str(chord_times)+'_'+special_name+'_N'+str(n_curtain)
+    save_string_base = '_curt_'+date+'_d'+str(data_dim_flag)+'_cb'+str(base_smoothing_flag)+'_an'+str(anomaly_flag)+'_ct'+str(chord_times)
+    if data_dim_flag==3:
+        save_string_base = save_string_base+'_sf'+str(scale_flag)+'_'
 
-    if scale_flag ==1:
-        save_string_base = save_string_base+'_scaled1'
-        print('scaling added to save_string_base '+save_string_base)
-    if scale_flag ==2:
-        save_string_base = save_string_base+'_scaled2'
-        print('scaling added to save_string_base '+save_string_base)
+    if N_it_min>0:
+        save_string_base = save_string_base+'_Nmin'+str(N_it_min)
+    if N_it_max<1e9:
+        save_string_base = save_string_base+'_Nmax'+str(n_iter)
+
+    save_string_base = save_string_base+'_'+special_name+'_N'+str(n_curtain)
+
     
     save_string = 'data_curtains/'+ reg_var+save_string_base
     #if data_dim_flag==3:
