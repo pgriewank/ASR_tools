@@ -56,6 +56,7 @@ def proc_chords(          date_str='20160611',
     # N_it_max = maximum number of iterables, 3D timesteps or column files. Used for testing things quickly
     # N_it_min = start number of iterables, 3D timesteps or column files. Only reall makes sense for 3D to avoid some weird initial fields. 
     
+    time_begin = ttiimmee.time()
     
 
     dz = 25.0 #39.0625 #should be overwritten after the profile data is loaded
@@ -152,9 +153,14 @@ def proc_chords(          date_str='20160611',
     chord_w                   = []
     chord_w_up                = [] #mean over updrafts
     chord_w_base              = []
+    chord_w_star              = []
+    chord_thl_star            = []
+    chord_qt_star             = []
+    chord_thl                 = []
+    chord_thl_25              = []
+    chord_qt                  = []
+    chord_qt_75               = []
     chord_w_flux              = [] #Sum of w below
-    chord_thl_anom            = []
-    chord_qt_anom             = []
     #Coming next
     chord_w_per               = np.zeros([0,n_percentiles])
     chord_w_per_up            = np.zeros([0,n_percentiles])
@@ -175,6 +181,9 @@ def proc_chords(          date_str='20160611',
     nz_prof = w2.shape[1]
     z_prof = file_prof['z'][:]
     dz = z_prof[1]-z_prof[0]
+    total_surf_buoy_flux = file_prof['bflux'][:,1]
+    total_surf_thl_flux = file_prof['thlflux'][:,1]
+    total_surf_qt_flux = file_prof['qtflux'][:,1]
     print('dz: ',dz)
     
     
@@ -256,11 +265,19 @@ def proc_chords(          date_str='20160611',
             
             #The needed cbl height
             cbl_1d = t_1d*0
+            #The needed surface_bouyancy_flux
+            bflux_s_1d = t_1d*0
+            qtflux_s_1d = t_1d*0
+            thlflux_s_1d = t_1d*0
+
 
             #Now we go through profile time snapshots and allocate the closest full time values to the profile values
             dt_2 = (time_prof[1]-time_prof[0])/2
             for tt in range(len(time_prof)):
                 cbl_1d[abs(t_1d-time_prof[tt])<dt_2] = cbl_1d_prof[tt]
+                bflux_s_1d[abs(t_1d-time_prof[tt])<dt_2] = total_surf_buoy_flux[tt]
+                qtflux_s_1d[abs(t_1d-time_prof[tt])<dt_2]  = total_surf_qt_flux[tt]
+                thlflux_s_1d[abs(t_1d-time_prof[tt])<dt_2] = total_surf_thl_flux[tt]
                 
                 
                 
@@ -364,6 +381,10 @@ def proc_chords(          date_str='20160611',
             #The needed cbl height, which constant everywhere
             cbl_1d = t_1d*0
             cbl_1d[:] = cbl_1d_prof[it]
+            #The needed surface buoyancy flux, which is constant everywhere
+            bflux_s_1d = t_1d*0 + total_surf_buoy_flux[it]
+            qtflux_s_1d = t_1d*0  + total_surf_qt_flux[it]
+            thlflux_s_1d = t_1d*0 + total_surf_thl_flux[it]
 
 
 
@@ -461,12 +482,33 @@ def proc_chords(          date_str='20160611',
                     chord_timesteps.append(t_chord_end-t_chord_begin)
                     chord_duration.append(ch_duration)
                     chord_length.append(ch_duration*V_ref)
-                    chord_height.append(np.percentile(cl_base[ch_idx_l],base_percentile)*dz) #25th percentile of cloud base
+                    tmp_base_height = np.percentile(cl_base[ch_idx_l],base_percentile)*dz
+                    chord_height.append(tmp_base_height) #25th percentile of cloud base
+                    
+                    surf_b_flux = np.mean(bflux_s_1d[idx_beg_chord:idx_end_chord])
+                    w_star = (tmp_base_height*surf_b_flux)**(1./3.)
+                    surf_qt_flux = np.mean(qtflux_s_1d[idx_beg_chord:idx_end_chord])
+                    qt_star = surf_qt_flux/w_star
+                    surf_thl_flux = np.mean(thlflux_s_1d[idx_beg_chord:idx_end_chord])
+                    thl_star = surf_thl_flux/w_star
+                    
+                    chord_w_star.append(w_star )
+                    chord_thl_star.append(thl_star )
+                    chord_qt_star.append(qt_star )
+                    
+                    
                     chord_w_base.append(np.mean(w_2d[cl_base[ch_idx_l],ch_idx_l]))
                     chord_w.append(np.mean(w_2d[cl_base[ch_idx_l]-1,ch_idx_l]))
+                    chord_thl.append(np.mean(thl_2d[cl_base[ch_idx_l]-1,ch_idx_l]))
+                    
+                    #get a fourth and 3/4 of the cloud base
+                    cl_base_25_idx = cl_base[ch_idx_l]*0 + int(np.percentile(cl_base[ch_idx_l],base_percentile)/4.)
+                    cl_base_75_idx = cl_base[ch_idx_l]*0 + int(np.percentile(cl_base[ch_idx_l],base_percentile)*3./4.)
+                    #print ('cl base idx:',np.percentile(cl_base[ch_idx_l],base_percentile),'clbase/4:',cl_base_25_idx[0],'clbase3/4:',cl_base_75_idx[0])
+                    chord_thl_25.append(np.mean(thl_2d[cl_base_25_idx,ch_idx_l]))
+                    chord_qt.append(np.mean(qt_2d[cl_base[ch_idx_l]-1,ch_idx_l]))
+                    chord_qt_75.append(np.mean(qt_2d[cl_base_75_idx,ch_idx_l]))
                     chord_w_flux.append(np.sum(w_2d[cl_base[ch_idx_l]-1,ch_idx_l]))
-                    chord_thl_anom.append(np.mean(thl_2d[cl_base[ch_idx_l]-1,ch_idx_l]))
-                    chord_qt_anom.append(np.mean(qt_2d[cl_base[ch_idx_l]-1,ch_idx_l]))
 
                     w_base_vec = w_2d[cl_base[ch_idx_l]-1,ch_idx_l]
                     chord_w_up.append(np.mean(w_base_vec[w_base_vec>0.0]))
@@ -511,11 +553,16 @@ def proc_chords(          date_str='20160611',
     chord_length   =np.asarray(chord_length)
     chord_height   =np.asarray(chord_height)
     chord_w_base   =np.asarray(chord_w_base)
+    chord_w_star   =np.asarray(chord_w_star)
+    chord_thl_star =np.asarray(chord_thl_star)
+    chord_qt_star  =np.asarray(chord_qt_star)
     chord_w        =np.asarray(chord_w)
     chord_w_up     =np.asarray(chord_w_up)
     chord_w_flux   =np.asarray(chord_w_flux)
-    chord_thl_anom =np.asarray(chord_thl_anom)
-    chord_qt_anom  =np.asarray(chord_qt_anom)
+    chord_thl      =np.asarray(chord_thl)
+    chord_thl_25   =np.asarray(chord_thl_25)
+    chord_qt       =np.asarray(chord_qt)
+    chord_qt_75    =np.asarray(chord_qt_75)
     chord_time     =np.asarray(chord_time)
     
     
@@ -523,15 +570,28 @@ def proc_chords(          date_str='20160611',
     
     print('all chords: ',len(chord_duration))
         
-    save_string_base = 'chord_prop_'+date+'_d'+str(data_dim_flag)+'_ct'+str(chord_times)+'_'+special_name+'_N'+str(n_chords)
+    save_string_base = 'chord_prop_'+date+'_d'+str(data_dim_flag)+'_ct'+str(chord_times)
+    if N_it_min>0:
+        save_string_base = save_string_base+'_Nmin'+str(N_it_min)
+    if N_it_max<1e9:
+        save_string_base = save_string_base+'_Nmax'+str(n_iter)
+    save_string_base = save_string_base+'_'+special_name+'_N'+str(n_chords)
 
                    
     filename_chord_panda = directory_output+save_string_base+'.pkl'
     
     
-    data_for_panda = list(zip(chord_timesteps,chord_duration,chord_length,chord_height,chord_w_base,chord_w,chord_w_flux,chord_thl_anom,chord_qt_anom,chord_time,chord_w_up,chord_w_per,chord_w_per_up))
-    df = pd.DataFrame(data = data_for_panda, columns=['timesteps','duration','length','height','w_base','w','w_flux','thl_anom','qt_anom','time','w up','w per','w per up'])
+    data_for_panda = list(zip(chord_timesteps,chord_duration,chord_length,chord_height,chord_w_base,chord_w,chord_w_flux,chord_time,chord_w_up,chord_w_per,chord_w_per_up,
+                             chord_w_star,chord_thl_star,chord_qt_star,
+                             chord_thl,chord_thl_25,chord_qt,chord_qt_75))
+    df = pd.DataFrame(data = data_for_panda, columns=['timesteps','duration','length','height','w_base','w','w_flux','time','w up','w per','w per up',
+                                                     'w star','thl star','qt star',
+                                                     'thl','thl 25','qt','qt 75'])
     df.to_pickle(filename_chord_panda)
+    time_end = ttiimmee.time()
+    print('total run time of proc_chords in minutes: ',(time_end-time_begin)/60.)
+    print(':')
+    print(':')
     print('chordlength properties saved as panda in ',filename_chord_panda)
     print(':')
     print(':')
@@ -546,7 +606,7 @@ def proc_chords(          date_str='20160611',
     print(':')
 
 
-
+    return
 
 
 
@@ -590,7 +650,7 @@ def proc_beard_regularize(reg_var = 'w',
                           plot_curtains_flag = 0,
                           base_percentile = 25,
                           special_name='',
-                          scale_flag=0,
+                          scale_flag=2,
                           chord_times = 0,
                           anomaly_flag = 0,
                           N_it_max=1e9,
@@ -599,7 +659,8 @@ def proc_beard_regularize(reg_var = 'w',
                           N_bins=12,
                           bin_size = 250,
                           curtain_extra = 1.0,
-                          chord_max = 1e9
+                          chord_max = 1e9,
+                          boundary_scaling_flag = 0
                          ):
 
     # reg_var = variable that will be regularized
@@ -619,6 +680,8 @@ def proc_beard_regularize(reg_var = 'w',
     # size_bin_flag bins the beards by their chord_lenth. Currently using 8 bins of 250 meters length to get started. The lowest bin should be empty, because we only calculate curtains when at least curtain_min is used
     # curtain_extra: Regularized chord length before and after in the curtain, default is 1
     # chord_max: Maximum number of chords. If data_dim_flag=3 it will jump to the y direction when chord_max/2 is reached
+    # boundary_scaling_flag: 0 nothing, 1 uses the surface fluxes and cloud base height to calculate either w/w*, thl'/thl*, or qt'/qt*
+    time_begin = ttiimmee.time()
 
     directory_output = 'data_curtains/'
 
@@ -904,6 +967,11 @@ def proc_beard_regularize(reg_var = 'w',
     dz = z_prof[1]-z_prof[0]
     print('dz: ',dz)
     
+    #for boundary scaling
+    total_surf_buoy_flux = file_prof['bflux'][:,1]
+    total_surf_thl_flux = file_prof['thlflux'][:,1]
+    total_surf_qt_flux = file_prof['qtflux'][:,1]
+    
 
     time_prof = file_prof['time'][:]
     cbl_1d_prof = time_prof*0.0
@@ -1000,6 +1068,9 @@ def proc_beard_regularize(reg_var = 'w',
             dt_2 = (time_prof[1]-time_prof[0])/2
             for tt in range(len(time_prof)):
                 cbl_1d[abs(t_1d-time_prof[tt])<dt_2] = cbl_1d_prof[tt]
+                bflux_s_1d[abs(t_1d-time_prof[tt])<dt_2]   = total_surf_buoy_flux[tt]
+                qtflux_s_1d[abs(t_1d-time_prof[tt])<dt_2]  = total_surf_qt_flux[tt]
+                thlflux_s_1d[abs(t_1d-time_prof[tt])<dt_2] = total_surf_thl_flux[tt]
                 
             #to get anomalies we subtract the closet mean profile
             if anomaly_flag==1:
@@ -1102,6 +1173,10 @@ def proc_beard_regularize(reg_var = 'w',
             #The needed cbl height, which constant everywhere
             cbl_1d = t_1d*0
             cbl_1d[:] = cbl_1d_prof[it]
+            #The needed surface buoyancy flux, which is constant everywhere
+            bflux_s_1d = t_1d*0   + total_surf_buoy_flux[it]
+            qtflux_s_1d = t_1d*0  + total_surf_qt_flux[it]
+            thlflux_s_1d = t_1d*0 + total_surf_thl_flux[it]
 
 
 
@@ -1261,7 +1336,23 @@ def proc_beard_regularize(reg_var = 'w',
 
                         #Regularized curtains, I am too lazy to pass on all my variables to func_curtain_reg so I instead made it a nested function
                         var_curtain_tmp = (func_curtain_reg(var_2d)).transpose()
-                        
+                 
+                        if boundary_scaling_flag == 1:
+                            #Now adding the boundary scaling using w*
+                            surf_flux = np.mean(bflux_s_1d[idx_beg_chord:idx_end_chord])
+                            base_height = z_idx_base_default*dz
+
+                            w_star=(base_height*surf_flux)**(1/3) 
+                            if reg_var=='w': 
+                                boundary_scaling = w_star
+                            if reg_var=='qt': 
+                                surf_flux = np.mean(qtflux_s_1d[idx_beg_chord:idx_end_chord])
+                                boundary_scaling = surf_flux/w_star
+                            if reg_var=='thl': 
+                                thl_flux = np.mean(thlflux_s_1d[idx_beg_chord:idx_end_chord])
+                                boundary_scaling = surf_flux/w_star
+
+                            var_curtain_tmp = var_curtain_tmp/boundary_scaling
 
                         #Finally add it to the mean one and track one more curtain
                         #detecting if chord base has a positive or negative w, then adds to the sum of up or downdraft chords
@@ -1377,16 +1468,18 @@ def proc_beard_regularize(reg_var = 'w',
             t_cloudy_idx += 1
         time3 = ttiimmee.time()
 
-        print('curtain processing:',(time3-time2)*1.0,)
+        print('curtain processing:',(time3-time2)/60.0,'minutes')
     
     save_string_base = '_curt_'+date+'_d'+str(data_dim_flag)+'_cb'+str(base_smoothing_flag)+'_an'+str(anomaly_flag)+'_ct'+str(chord_times)
     if data_dim_flag==3:
-        save_string_base = save_string_base+'_sf'+str(scale_flag)+'_'
+        save_string_base = save_string_base+'_sf'+str(scale_flag)
 
     if N_it_min>0:
         save_string_base = save_string_base+'_Nmin'+str(N_it_min)
     if N_it_max<1e9:
         save_string_base = save_string_base+'_Nmax'+str(n_iter)
+    if boundary_scaling_flag==1:
+        save_string_base = 'star'+save_string_base
 
     save_string_base = save_string_base+'_'+special_name+'_N'+str(n_curtain)
 
@@ -1422,6 +1515,8 @@ def proc_beard_regularize(reg_var = 'w',
     print(':')
     print(':')
     print(':')
+    time_end = ttiimmee.time()
+    print('total run time of proc_beard_regularize in minutes: ',(time_end-time_begin)/60.)
     print(':')
     print(':')
     print(':')
