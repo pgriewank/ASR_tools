@@ -1,6 +1,7 @@
 #Contains the functions needed to process both chords and regularized beards
 #proc_chords is used for chords
 #proc_beard_regularize for generating beards
+#proc_pdf saves pdfs of a variable below cloud base
 #Both have a large overlap, but I split them in two to keep the one script from getting to confusing. 
 
 import numpy as np
@@ -1063,6 +1064,9 @@ def proc_beard_regularize(reg_var = 'w',
             
             #The needed cbl height
             cbl_1d = t_1d*0
+            bflux_s_1d  = t_1d*0 
+            qtflux_s_1d = t_1d*0 
+            thlflux_s_1d= t_1d*0 
 
             #Now we go through profile time snapshots and allocate the closest full time values to the profile values
             dt_2 = (time_prof[1]-time_prof[0])/2
@@ -1543,3 +1547,392 @@ def proc_beard_regularize(reg_var = 'w',
 
    
     
+
+#A simple script which calculates a histogram below the cloud base and saves it
+#I will try to keep it at least somewhat general with a flexible variable
+
+def proc_pdf(reg_var = 'w',
+                        date_str='20160611',
+                        directory_input='/data/testbed/lasso/sims/',
+                        data_dim_flag=3,
+                        special_name='',
+                        N_it_max=1e9,
+                        N_it_min=0,
+                        anomaly_flag =0,                   
+                        N_bins=200,
+                        base_percentile = 25,
+                        boundary_scaling_flag = 1,
+                        range_var = [-10,10] ):
+
+    
+    directory_output = 'data_pdfs/'
+
+
+    #We are starting out with histograms of w from -10 to 10 and a 0.1 spacing
+    var_hist_sum=np.zeros(N_bins)
+
+    date = date_str
+
+    #value used to determine existence of cloud
+    ql_min = 1e-5
+
+    z_min  = 10 #Index of minimum  z_vlvl of the cbl
+
+
+    print('looking into date: ',date)
+    if data_dim_flag==1:
+        filename_column = []
+        #uses glob to get all files which contain column.
+        column_files =     glob.glob(directory_input+date+'/*.column.*.*.*.nc')
+
+        for c_file in column_files:
+            filename_column.append(c_file)
+            print('filename column included:',c_file)
+        #if date_str=='bomex':
+        #    filename_column.append(directory_input+date+'/bomex.column.00512.00512.0000000.nc')
+        #else:
+        #    #filename_column.append(directory_input+date+'/testbed.column.00000.00000.0000000.nc')
+        #    #filename_column.append(directory_input+date+'/testbed.column.00000.00512.0000000.nc')
+        #    #filename_column.append(directory_input+date+'/testbed.column.00512.00000.0000000.nc')
+        #    filename_column.append(directory_input+date+'/testbed.column.00512.00512.0000000.nc')
+    if data_dim_flag==3:
+        filename_w   = directory_input+date+'/w.nc'
+        filename_l   = directory_input+date+'/ql.nc'
+        file_w       = Dataset(filename_w,read='r')
+        file_ql      = Dataset(filename_l,read='r')
+        [nz, nx, ny] = get_zxy_dimension(filename_l,'ql')
+
+
+        #getting variable to be regularized
+        filename_var = directory_input+date+'/'+reg_var+'.nc'
+        file_var     = Dataset(filename_var,read='r')
+
+
+
+
+
+    filename_prof=directory_input+date+'/testbed.default.0000000.nc'
+
+    if date=='bomex':
+        filename_prof=directory_input+date+'/bomex.default.0000000.nc'
+
+    file_prof  =  Dataset(filename_prof,read='r')
+
+
+    extra_string = ''
+
+
+
+
+
+    #This now a bit trickier then for the 3D version. Will have to calculate a vector for the lower time resolution of the profile,
+    #Then latter apply the nearest value to the full 1d time vec
+    #First loading surface variables from default profile
+
+    print('calculating cbl height from profile file')
+    T = file_prof['thl'][:,0]
+    p = file_prof['p'][:,0]*0.0+99709
+    qt = file_prof['qt'][:,0]
+    w2 = file_prof['w2'][:,:]
+    nz_prof = w2.shape[1]
+    var_prof =  file_prof[reg_var][:,:] #needed for anomaly processing
+    #Just grabbing this to calculate dz
+    z_prof = file_prof['z'][:]
+    dz = z_prof[1]-z_prof[0]
+    print('dz: ',dz)
+    
+    #for boundary scaling
+    total_surf_buoy_flux = file_prof['bflux'][:,1]
+    total_surf_thl_flux = file_prof['thlflux'][:,1]
+    total_surf_qt_flux = file_prof['qtflux'][:,1]
+
+
+    time_prof = file_prof['time'][:]
+    cbl_1d_prof = time_prof*0.0
+
+    #Hack together the Lifting condensation level LCL
+    qt_pressure = p*qt
+    sat_qv = 6.112*100 * np.exp(17.67 * (T - 273.15) / (T - 29.65 ))
+    #rel_hum = np.asmatrix(qt_pressure/sat_qv)[0]
+    rel_hum = qt_pressure/sat_qv
+    #Dewpoint
+    A = 17.27
+    B = 237.7
+    alpha = ((A * (T- 273.15)) / (B + (T-273.15)))
+    alpha = alpha + np.log(rel_hum)
+    dewpoint = (B * alpha) / (A - alpha)
+    dewpoint = dewpoint + 273.15
+    LCL = 125.*(T-dewpoint)
+    LCL_index = np.floor(LCL/dz)
+
+    #now calculate the cbl top for each profile time
+    for tt in range(len(time_prof)):
+        w_var = 1.0
+        z=z_min
+        while w_var > 0.08:
+            z += 1
+            w_var = w2[tt,z]
+            #w_var = np.var(w_1d[z,:])
+
+        #Mimimum of LCL +100 or variance plus 300 m 
+        cbl_1d_prof[tt] = min(z+300/dz,LCL_index[tt])
+        #To avoid issues later on I set the maximum cbl height to 60 % of the domain height, but spit out a warning if it happens
+        if cbl_1d_prof[tt]>0.6*nz_prof:
+            print('warning, cbl height heigher than 0.6 domain height, could crash regularization later on, timestep: ',tt)
+            cbl_1d_prof[tt] = math.floor(nz*0.6)
+    print('resulting indexes of cbl over time: ',cbl_1d_prof)
+    print('calculated LCL: ',LCL_index)
+
+
+    #Now we either iterate over columns or timesteps
+    if data_dim_flag==1:
+        n_iter =len(filename_column)
+    if data_dim_flag==3:
+        n_iter =len(time_prof)
+
+
+    #for col in filename_column:
+    n_iter = min(n_iter,N_it_max)
+    for it in range(N_it_min,n_iter):
+        time1 = ttiimmee.time()
+        if data_dim_flag ==1:
+            print('loading column: ',filename_column[it])
+            file_col = Dataset(filename_column[it],read='r')
+
+            w_2d = file_col.variables['w'][:]
+            w_2d = w_2d.transpose()
+            ql_2d = file_col.variables['ql'][:]
+            ql_2d = ql_2d.transpose()
+            t_1d = file_col.variables['time'][:]
+            print('t_1d',t_1d)
+            #Load the var file, even if means that we doable load w_2d or ql_2d
+            var_2d = file_col.variables[reg_var][:]
+
+
+            var_2d = var_2d.transpose()
+
+
+            #The needed cbl height
+            cbl_1d = t_1d*0
+            bflux_s_1d  = t_1d*0 
+            qtflux_s_1d = t_1d*0 
+            thlflux_s_1d= t_1d*0 
+
+            #Now we go through profile time snapshots and allocate the closest full time values to the profile values
+            dt_2 = (time_prof[1]-time_prof[0])/2
+            for tt in range(len(time_prof)):
+                cbl_1d[abs(t_1d-time_prof[tt])<dt_2] = cbl_1d_prof[tt]
+                bflux_s_1d[abs(t_1d-time_prof[tt])<dt_2]   = total_surf_buoy_flux[tt]
+                qtflux_s_1d[abs(t_1d-time_prof[tt])<dt_2]  = total_surf_qt_flux[tt]
+                thlflux_s_1d[abs(t_1d-time_prof[tt])<dt_2] = total_surf_thl_flux[tt]
+
+            #to get anomalies we subtract the closet mean profile
+            if anomaly_flag==1:
+                for tt in range(len(time_prof)):
+                    #print('var_2d[.shape',var_2d.shape)
+                    #print('var_prof.shape',var_prof.shape)
+                    #globals().update(locals())
+                    tmp_matrix =  var_2d[:,abs(t_1d-time_prof[tt])<dt_2]
+                    tmp_vector =  var_prof[tt,:]
+                    #because the vectors don't perfectly align
+                    var_2d[:,abs(t_1d-time_prof[tt])<dt_2] = (tmp_matrix.transpose() - tmp_vector).transpose()
+
+                    # = var_2d[:,abs(t_1d-time_prof[tt])<dt_2]-var_prof[tt,:]
+
+
+
+
+        if data_dim_flag ==3:
+
+
+            if sum(file_prof['ql'][it,:])>0.0:
+
+                print('loading timestep: ',it)
+
+                ql_3d   = grab_3d_field(file_ql  ,it,'ql')
+                w_3d    = grab_3d_field(file_w   ,it,'w')
+                var_3d  = grab_3d_field(file_var ,it,reg_var)
+
+                #Here we have to do all the fuckery to turn the 3D fields into 2d slices with an imaginary time vector
+                w_2d   = np.array(w_3d.reshape((nz,nx*ny)))
+                ql_2d  = np.array(ql_3d.reshape((nz,nx*ny)))
+                var_2d = np.array(var_3d.reshape((nz,nx*ny)))
+
+                #Now we do the same thing with the transposed field, use to be an either or, now just add it on
+                w_3d   = np.transpose( w_3d,  (0, 2, 1))
+                ql_3d  = np.transpose(ql_3d,  (0, 2, 1))
+                var_3d = np.transpose(var_3d, (0, 2, 1))
+
+                #globals().update(locals())                
+                w_2d     = np.hstack([w_2d   ,np.array(w_3d.reshape((nz,nx*ny)))])
+                ql_2d    = np.hstack([ql_2d  ,np.array(ql_3d.reshape((nz,nx*ny)))])
+                var_2d   = np.hstack([var_2d ,np.array(var_3d.reshape((nz,nx*ny)))])
+                
+                #This might save a bit of memory
+                if reg_var == 'w':
+                    var_2d = w_2d
+                if reg_var == 'ql':
+                    var_2d = ql_2d
+                    
+
+
+
+                ##Transposing 3D fields to sample the clouds in another direction
+                #if direction_slice=='y':
+                #    w_3d   = np.transpose( w_3d,  (0, 2, 1))
+                #    ql_3d  = np.transpose(ql_3d,  (0, 2, 1))
+                #    var_3d = np.transpose(var_3d, (0, 2, 1))
+
+                #Should now be able to delete 3d fields as they aren't needed anymore, not sure if that helps save any memory though
+                del w_3d
+                del ql_3d
+                del var_3d
+
+                gc.collect()
+
+                 #fake t vector,   
+                t_1d = np.linspace(0,2*nx*ny,2*nx*ny)
+                
+                #Switching to anomalies if anomaly flag is used
+                if anomaly_flag==1:
+                    #tmp_matrix =  var_2d[:,abs(t_1d-time_prof[tt])<dt_2]
+                    #tmp_vector =  var_prof[tt,:]
+                    #because the vectors don't perfectly align
+                    var_2d[:,:] = (var_2d.transpose() - var_prof[it,:]).transpose()
+
+
+                #to get the fake time vector we load the wind from the profile data, which devided by the grid spacing gives us a fake time resolution
+                #we use the calculated cbl+300 meter or lcl as reference height 
+                ref_lvl = cbl_1d_prof[it]
+
+
+
+
+
+            else:
+                #If no clouds are present we pass a very short empty fields over to the chord searcher
+                print('skipping timestep: ',it,' cause no clouds')
+                ql_2d  = np.zeros((nz,1))
+                w_2d   = np.zeros((nz,1))
+                var_2d = np.zeros((nz,1))
+                t_1d   = np.zeros(1)
+
+            #The needed cbl height, which constant everywhere
+            cbl_1d = t_1d*0
+            cbl_1d[:] = cbl_1d_prof[it]
+            #The needed surface buoyancy flux, which is constant everywhere
+            bflux_s_1d = t_1d*0   + total_surf_buoy_flux[it]
+            qtflux_s_1d = t_1d*0  + total_surf_qt_flux[it]
+            thlflux_s_1d = t_1d*0 + total_surf_thl_flux[it]
+
+
+
+
+
+
+        time2 = ttiimmee.time()
+        print('loading time:',(time2-time1)*1.0,)
+
+
+
+        ### Detecting lowest cloud cell is within 300 m of CBL
+
+        nt = len(cbl_1d)
+        cl_base = np.zeros(nt)
+
+        #Detecting all cloudy cells
+        #Use to have a different method using nans that doesn:t work anymore somehow. Now I just set it really high where there is no cloud. 
+        for t in range(nt):
+            if np.max(ql_2d[:,t])>ql_min :
+                cl_base[t]=np.argmax(ql_2d[:,t]>ql_min)
+            else:
+                cl_base[t]=10000000
+
+        cl_base=cl_base.astype(int)
+
+        #Now find c base lower than the max height
+        cbl_cl_idx = np.where((cl_base-cbl_1d[:nt])*dz<0)[0]
+
+        cbl_cl_binary = cl_base*0
+        cbl_cl_binary[cbl_cl_idx]=1
+
+
+        print('iterating through step ',it,'which contains ',len(cbl_cl_idx),'cloudy columns')
+
+        #Now calculating the var at cloud base
+        var_cl_base=var_2d[cl_base[cbl_cl_idx]-1,cbl_cl_idx]
+        
+        #If boundary scaling is used, the variable is scaled accordingly
+        #Only called if there are any clouds
+        if boundary_scaling_flag == 1 and len(cbl_cl_idx)>1:
+            
+            #First thing to do is calculate the chord base using the 25 percentile in agreement with Neil
+            
+            if data_dim_flag==3:
+                z_idx_base_default = math.floor(np.percentile(cl_base[cbl_cl_idx],base_percentile))
+            # Can't think of a good way to do this, will throw up an error for the mean time. 
+            if data_dim_flag==1:
+                print('sorry, but I havent implemented star scaling for 2d data')
+                sys.exit()
+
+
+
+            
+            #Now adding the boundary scaling using w*
+            #Is a bit overcooked currently as it only works with 3D data and thus all surface fluxes are the same everywhere. 
+            surf_flux = np.mean(bflux_s_1d)
+            base_height = z_idx_base_default*dz
+
+            w_star=(base_height*surf_flux)**(1/3) 
+            if reg_var=='w': 
+                boundary_scaling = w_star
+            if reg_var=='qt': 
+                surf_flux = np.mean(qtflux_s_1d)
+                boundary_scaling = surf_flux/w_star
+            if reg_var=='thl': 
+                thl_flux = np.mean(thlflux_s_1d)
+                boundary_scaling = surf_flux/w_star
+
+            var_cl_base = var_cl_base/boundary_scaling
+
+        #Calculating the histogram, and adding it to the total histogram
+        var_hist,bin_edges = np.histogram(var_cl_base,range=range_var,bins=N_bins)
+
+        var_hist_sum = var_hist_sum+var_hist
+
+
+    var_pdf = var_hist_sum
+
+
+    save_string_base = '_pdf_'+date+'_d'+str(data_dim_flag)+'_an'+str(anomaly_flag)
+
+    if N_it_min>0:
+        save_string_base = save_string_base+'_Nmin'+str(N_it_min)
+    if N_it_max<1e9:
+        save_string_base = save_string_base+'_Nmax'+str(n_iter)
+    if boundary_scaling_flag==1:
+        save_string_base = 'star'+save_string_base
+
+
+    save_string = 'data_pdfs/'+ reg_var+save_string_base
+    #if data_dim_flag==3:
+    #    save_string= save_string+'_'+direction_slice
+
+    save_string = save_string+'.npz'
+
+    np.savez(save_string,var_pdf=var_pdf,range_var=range_var)
+    print('saved pdf with ', sum(var_pdf), 'points to '+save_string)
+
+    print(':')
+    print(':')
+    print(':')
+    print(':')
+    print(':')
+    print(':')
+    print(':')
+    print(':')
+    print(':')
+    print(':')
+    print(':')
+                
+    return
