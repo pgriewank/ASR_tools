@@ -103,15 +103,6 @@ def proc_chords(          date_str='20160611',
         for c_file in column_files:
             filename_column.append(c_file)
             print('filename column included:',c_file)
-       # 
-       # 
-       # if date_str=='bomex':
-       #     filename_column.append(directory_input+date+'/bomex.column.00512.00512.0000000.nc')
-       # else:
-       #     #filename_column.append(directory_input+date+'/testbed.column.00000.00000.0000000.nc')
-       #     #filename_column.append(directory_input+date+'/testbed.column.00000.00512.0000000.nc')
-       #     #filename_column.append(directory_input+date+'/testbed.column.00512.00000.0000000.nc')
-       #     filename_column.append(directory_input+date+'/testbed.column.00512.00512.0000000.nc')
     if data_dim_flag==3:
         filename_w   = directory_input+date+'/w.nc'
         filename_l   = directory_input+date+'/ql.nc'
@@ -124,18 +115,15 @@ def proc_chords(          date_str='20160611',
         [nz, nx, ny] = get_zxy_dimension(filename_l,'ql')
         
         
-#         #getting variable to be regularized
-#         filename_var = directory_input+date+'/'+reg_var+'.nc'
-#         file_var     = Dataset(filename_var,read='r')
 
 
 
 
 
-    filename_prof=glob.glob(directory_input+date+'/testbed?default?0*.nc')[0]
+    filename_prof=glob.glob(directory_input+date+'/*default?0*.nc')[0]
     
-    if date=='bomex':
-        filename_prof=directory_input+date+'/bomex.default.0000000.nc'
+    #if date=='bomex':
+    #    filename_prof=directory_input+date+'/bomex.default.0000000.nc'
         
 
     file_prof  =  Dataset(filename_prof,read='r')
@@ -240,8 +228,6 @@ def proc_chords(          date_str='20160611',
     #for col in filename_column:
     n_iter = min(n_iter,N_it_max)
     for it in range(N_it_min,n_iter):
-    #for it in range(14,16):
-    #for it in range(16,17):
         print('n_chords: ',n_chords)
         
 
@@ -360,10 +346,6 @@ def proc_chords(          date_str='20160611',
                 V_ref = np.sqrt(u_ref**2+v_ref**2) 
 
                 time_resolution = dx/V_ref
-                #if time_resolution > t_gap:
-                #    print('t_gap too small:', t_gap)
-                #    t_gap = time_resolution*1.5
-                #    print('changed t_gap to:', t_gap)
 
                 print('time iterative, V_ref, time_resolution',it, str(V_ref)[:4], str(time_resolution)[:4] )
                 #fake t vector, 
@@ -444,13 +426,11 @@ def proc_chords(          date_str='20160611',
             #now connecting all cloudy indexes
             #Originally only cared if they fulfilled cloud criteria, but now I also hard coded that neighboring cells always count
             ##Check if the index of the next cloudy cell is the same as the next index in total, if so the cells are connected
-            #if cbl_cl_idx[t_cloudy_idx+1]==cbl_cl_idx[t_cloudy_idx]+1:
                 
             
             while t_cloudy_idx < len(cbl_cl_idx)-1 and (cbl_cl_idx[t_cloudy_idx+1]==cbl_cl_idx[t_cloudy_idx]+1 or t_cbl_cl[t_cloudy_idx+1]-t_cbl_cl[t_cloudy_idx]<t_gap):
                 t_cloudy_idx += 1 
             t_chord_end = t_cloudy_idx
-            #print('t_chord_end',t_chord_end)
 
 
             #Checking if it fulfils chord criteria regaring time
@@ -619,29 +599,6 @@ def proc_chords(          date_str='20160611',
 
 
 
-#import sys
-#sys.path.insert(0, "/home/pgriewank/code/2019-chords-plumes/")
-#import numpy as np
-#import math
-#from netCDF4 import Dataset
-#import os
-#import time as ttiimmee
-#from scipy.interpolate import interp1d
-#from scipy.interpolate import interp2d
-##from scipy.interpolate import griddata
-#from mpl_toolkits.axes_grid1 import make_axes_locatable
-#import pickle
-#
-#from unionfind import UnionFind
-#from cusize_functions import *
-##from proc_chords import *
-#
-#import matplotlib.pyplot as plt
-#import pandas as pd
-#import gc
-#
-#
-#
 #turned into a function
 #removed the possibility to loop over multiple dates, if you want to do that call the function repeatedly 
 #Should be able to work for any variable in the column output, or for any 3D variable as long as it is named the same as the file. 
@@ -651,7 +608,6 @@ def proc_chords(          date_str='20160611',
 
 
 #TODO
-#Output should be changed to xarray
 #plot_flag disabled for the mean time
 
 def proc_beard_regularize(reg_var = 'w',
@@ -839,7 +795,6 @@ def proc_beard_regularize(reg_var = 'w',
                     var_reg_inter = f(z_reg_mid)
                 except:
                     print(z_idx_base[i])
-                    #plt.plot(z_idx_base[c])
                     print(z_reg_orig)
                     print(z_reg_mid)
     
@@ -926,13 +881,6 @@ def proc_beard_regularize(reg_var = 'w',
         for c_file in column_files:
             filename_column.append(c_file)
             print('filename column included:',c_file)
-        #if date_str=='bomex':
-        #    filename_column.append(directory_input+date+'/bomex.column.00512.00512.0000000.nc')
-        #else:
-        #    #filename_column.append(directory_input+date+'/testbed.column.00000.00000.0000000.nc')
-        #    #filename_column.append(directory_input+date+'/testbed.column.00000.00512.0000000.nc')
-        #    #filename_column.append(directory_input+date+'/testbed.column.00512.00000.0000000.nc')
-        #    filename_column.append(directory_input+date+'/testbed.column.00512.00512.0000000.nc')
     if data_dim_flag==3:
         filename_w   = directory_input+date+'/w.nc'
         filename_l   = directory_input+date+'/ql.nc'
@@ -949,11 +897,9 @@ def proc_beard_regularize(reg_var = 'w',
 
 
 
-    #filename_prof=directory_input+date+'/testbed.default.0000000.nc'
-    #print(directory_input+date+ '/testbed?default?0*.nc')
-    filename_prof=glob.glob(directory_input+date+'/testbed?default?0*.nc')[0]
-    if date=='bomex':
-        filename_prof=directory_input+date+'/bomex.default.0000000.nc'
+    filename_prof=glob.glob(directory_input+date+'/*default?0*.nc')[0]
+    #if date=='bomex':
+    #    filename_prof=directory_input+date+'/bomex.default.0000000.nc'
 
     file_prof  =  Dataset(filename_prof,read='r')
 
@@ -1092,9 +1038,6 @@ def proc_beard_regularize(reg_var = 'w',
             #to get anomalies we subtract the closet mean profile
             if anomaly_flag==1:
                 for tt in range(len(time_prof)):
-                    #print('var_2d[.shape',var_2d.shape)
-                    #print('var_prof.shape',var_prof.shape)
-                    #globals().update(locals())
                     tmp_matrix =  var_2d[:,abs(t_1d-time_prof[tt])<dt_2]
                     tmp_vector =  var_prof[tt,:]
                     #because the vectors don't perfectly align
@@ -1133,11 +1076,6 @@ def proc_beard_regularize(reg_var = 'w',
                 
                 
                 
-                ##Transposing 3D fields to sample the clouds in another direction
-                #if direction_slice=='y':
-                #    w_3d   = np.transpose( w_3d,  (0, 2, 1))
-                #    ql_3d  = np.transpose(ql_3d,  (0, 2, 1))
-                #    var_3d = np.transpose(var_3d, (0, 2, 1))
                 
                 #Should now be able to delete 3d fields as they aren't needed anymore, not sure if that helps save any memory though
                 del w_3d
@@ -1149,8 +1087,6 @@ def proc_beard_regularize(reg_var = 'w',
                 
                 #Switching to anomalies if anomaly flag is used
                 if anomaly_flag==1:
-                    #tmp_matrix =  var_2d[:,abs(t_1d-time_prof[tt])<dt_2]
-                    #tmp_vector =  var_prof[tt,:]
                     #because the vectors don't perfectly align
                     var_2d[:,:] = (var_2d.transpose() - var_prof[it,:]).transpose()
                 
@@ -1165,17 +1101,11 @@ def proc_beard_regularize(reg_var = 'w',
                 V_ref = np.sqrt(u_ref**2+v_ref**2) 
 
                 time_resolution = dx/V_ref
-                #if time_resolution > t_gap:
-                #    print('t_gap too small:', t_gap)
-                #    t_gap = time_resolution*1.5
-                #    print('changed t_gap to:', t_gap)
 
                 print('time iterative, V_ref, time_resolution',it, V_ref, time_resolution )
                 print('ref_lvl used to determine reference winds',ref_lvl )
                 #fake t vector, 
                 t_1d = np.linspace(0,2*nx*ny*time_resolution,2*nx*ny)#+nx*ny*time_resolution*it
-                #dt_1d   = t_1d*0
-                #dt_1d[1:] = t_1d[1:]-t_1d[:-1]   
                 
                 
                 
@@ -1264,8 +1194,6 @@ def proc_beard_regularize(reg_var = 'w',
 
 
                 #1D vertical interpolation to get the right columns and asign them one by one to w_x_low_z_high
-                #f_x = interp1d(z_reg_orig, scaling_factor_x_prof_ext, kind='next')
-                #_y = interp1d(z_reg_orig, scaling_factor_y_prof_ext, kind='next')
                 f_x = interp1d(z_reg_orig, scaling_factor_x_prof_ext, kind='nearest')
                 f_y = interp1d(z_reg_orig, scaling_factor_y_prof_ext, kind='nearest')
                 scaling_factor_x_inter = f_x(z_reg_mid)
@@ -1290,8 +1218,6 @@ def proc_beard_regularize(reg_var = 'w',
         #n_chords = 0
         chord_idx_list = []
 
-        #t_cloudy_idx = int(np.floor(len(cbl_cl_idx)*0.99))+500 #just to make things short and easier to handle
-        #t_cloudy_idx = 289933-1
         print('iterating through step ',it,'which contains ',len(cbl_cl_idx),'cloudy columns')
 
 
@@ -1606,13 +1532,6 @@ def proc_pdf(reg_var = 'w',
         for c_file in column_files:
             filename_column.append(c_file)
             print('filename column included:',c_file)
-        #if date_str=='bomex':
-        #    filename_column.append(directory_input+date+'/bomex.column.00512.00512.0000000.nc')
-        #else:
-        #    #filename_column.append(directory_input+date+'/testbed.column.00000.00000.0000000.nc')
-        #    #filename_column.append(directory_input+date+'/testbed.column.00000.00512.0000000.nc')
-        #    #filename_column.append(directory_input+date+'/testbed.column.00512.00000.0000000.nc')
-        #    filename_column.append(directory_input+date+'/testbed.column.00512.00512.0000000.nc')
     if data_dim_flag==3:
         filename_w   = directory_input+date+'/w.nc'
         filename_l   = directory_input+date+'/ql.nc'
@@ -1748,9 +1667,6 @@ def proc_pdf(reg_var = 'w',
             #to get anomalies we subtract the closet mean profile
             if anomaly_flag==1:
                 for tt in range(len(time_prof)):
-                    #print('var_2d[.shape',var_2d.shape)
-                    #print('var_prof.shape',var_prof.shape)
-                    #globals().update(locals())
                     tmp_matrix =  var_2d[:,abs(t_1d-time_prof[tt])<dt_2]
                     tmp_vector =  var_prof[tt,:]
                     #because the vectors don't perfectly align
@@ -1796,11 +1712,6 @@ def proc_pdf(reg_var = 'w',
 
 
 
-                ##Transposing 3D fields to sample the clouds in another direction
-                #if direction_slice=='y':
-                #    w_3d   = np.transpose( w_3d,  (0, 2, 1))
-                #    ql_3d  = np.transpose(ql_3d,  (0, 2, 1))
-                #    var_3d = np.transpose(var_3d, (0, 2, 1))
 
                 #Should now be able to delete 3d fields as they aren't needed anymore, not sure if that helps save any memory though
                 del w_3d
@@ -1814,8 +1725,6 @@ def proc_pdf(reg_var = 'w',
                 
                 #Switching to anomalies if anomaly flag is used
                 if anomaly_flag==1:
-                    #tmp_matrix =  var_2d[:,abs(t_1d-time_prof[tt])<dt_2]
-                    #tmp_vector =  var_prof[tt,:]
                     #because the vectors don't perfectly align
                     var_2d[:,:] = (var_2d.transpose() - var_prof[it,:]).transpose()
 
@@ -1939,8 +1848,6 @@ def proc_pdf(reg_var = 'w',
 
 
     save_string = directory_output+ reg_var+save_string_base
-    #if data_dim_flag==3:
-    #    save_string= save_string+'_'+direction_slice
 
     save_string = save_string+'.npz'
 
