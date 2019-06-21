@@ -1,5 +1,5 @@
 #Contains the functions needed to process both chords and regularized beards
-#proc_chords is used for chords
+# proc_chords is used for chords
 #proc_beard_regularize for generating beards
 #proc_pdf saves pdfs of a variable below cloud base
 #Both have a large overlap, but I split them in two to keep the one script from getting to confusing. 
@@ -11,16 +11,16 @@ import os
 import time as ttiimmee
 from scipy.interpolate import interp1d
 from scipy.interpolate import interp2d
-from scipy.interpolate import griddata
-from mpl_toolkits.axes_grid1 import make_axes_locatable
+#from scipy.interpolate import griddata
+#from mpl_toolkits.axes_grid1 import make_axes_locatable
 import pickle
 import sys
-sys.path.insert(0, "/home/pgriewank/code/2019-chords-plumes/")
+#sys.path.insert(0, "/home/pgriewank/code/2019-chords-plumes/")
 
 
-from unionfind import UnionFind
+#from unionfind import UnionFind
 from cusize_functions import *
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import pandas as pd
 import gc
 import glob
@@ -98,7 +98,7 @@ def proc_chords(          date_str='20160611',
     if data_dim_flag==1:
         filename_column = []
         #uses glob to get all files which contain column.
-        column_files =     glob.glob(directory_input+date+'/*.column.*.*.*.nc')
+        column_files =     glob.glob(directory_input+date+'/*column*.nc')
          
         for c_file in column_files:
             filename_column.append(c_file)
@@ -132,7 +132,7 @@ def proc_chords(          date_str='20160611',
 
 
 
-    filename_prof=directory_input+date+'/testbed.default.0000000.nc'
+    filename_prof=glob.glob(directory_input+date+'/testbed?default?0*.nc')[0]
     
     if date=='bomex':
         filename_prof=directory_input+date+'/bomex.default.0000000.nc'
@@ -159,7 +159,9 @@ def proc_chords(          date_str='20160611',
     chord_qt_star             = []
     chord_thl                 = []
     chord_thl_25              = []
+    chord_thl_75              = []
     chord_qt                  = []
+    chord_qt_25               = []
     chord_qt_75               = []
     chord_w_flux              = [] #Sum of w below
     #Coming next
@@ -509,8 +511,10 @@ def proc_chords(          date_str='20160611',
                     cl_base_75_idx = cl_base[ch_idx_l]*0 + int(np.percentile(cl_base[ch_idx_l],base_percentile)*3./4.)
                     #print ('cl base idx:',np.percentile(cl_base[ch_idx_l],base_percentile),'clbase/4:',cl_base_25_idx[0],'clbase3/4:',cl_base_75_idx[0])
                     chord_thl_25.append(np.mean(thl_2d[cl_base_25_idx,ch_idx_l]))
+                    chord_thl_75.append(np.mean(thl_2d[cl_base_75_idx,ch_idx_l]))
                     chord_qt.append(np.mean(qt_2d[cl_base[ch_idx_l]-1,ch_idx_l]))
                     chord_qt_75.append(np.mean(qt_2d[cl_base_75_idx,ch_idx_l]))
+                    chord_qt_25.append(np.mean(qt_2d[cl_base_25_idx,ch_idx_l]))
                     chord_w_flux.append(np.sum(w_2d[cl_base[ch_idx_l]-1,ch_idx_l]))
 
                     w_base_vec = w_2d[cl_base[ch_idx_l]-1,ch_idx_l]
@@ -564,7 +568,9 @@ def proc_chords(          date_str='20160611',
     chord_w_flux   =np.asarray(chord_w_flux)
     chord_thl      =np.asarray(chord_thl)
     chord_thl_25   =np.asarray(chord_thl_25)
+    chord_thl_75   =np.asarray(chord_thl_75)
     chord_qt       =np.asarray(chord_qt)
+    chord_qt_25    =np.asarray(chord_qt_25)
     chord_qt_75    =np.asarray(chord_qt_75)
     chord_time     =np.asarray(chord_time)
     
@@ -586,10 +592,10 @@ def proc_chords(          date_str='20160611',
     
     data_for_panda = list(zip(chord_timesteps,chord_duration,chord_length,chord_height,chord_w_base,chord_w,chord_w_flux,chord_time,chord_w_up,chord_w_per,chord_w_per_up,
                              chord_w_star,chord_thl_star,chord_qt_star,
-                             chord_thl,chord_thl_25,chord_qt,chord_qt_75))
+                             chord_thl,chord_thl_25,chord_thl_75,chord_qt,chord_qt_25,chord_qt_75))
     df = pd.DataFrame(data = data_for_panda, columns=['timesteps','duration','length','height','w_base','w','w_flux','time','w up','w per','w per up',
                                                      'w star','thl star','qt star',
-                                                     'thl','thl 25','qt','qt 75'])
+                                                     'thl','thl 25','thl 75','qt','qt 25','qt 75'])
     df.to_pickle(filename_chord_panda)
     time_end = ttiimmee.time()
     print('total run time of proc_chords in minutes: ',(time_end-time_begin)/60.)
@@ -651,6 +657,7 @@ def proc_chords(          date_str='20160611',
 def proc_beard_regularize(reg_var = 'w',
                           date_str='20160611',
                           directory_input='/data/testbed/lasso/sims/',
+                          directory_output = 'data_curtains/',
                           data_dim_flag=1,
                           base_smoothing_flag=2,
                           plot_curtains_flag = 0,
@@ -689,7 +696,6 @@ def proc_beard_regularize(reg_var = 'w',
     # boundary_scaling_flag: 0 nothing, 1 uses the surface fluxes and cloud base height to calculate either w/w*, thl'/thl*, or qt'/qt*
     time_begin = ttiimmee.time()
 
-    directory_output = 'data_curtains/'
 
 
     dz = 25.0 #39.0625 #Is recalculated from the profile file later on
@@ -826,7 +832,8 @@ def proc_beard_regularize(reg_var = 'w',
     
     
                 #1D vertical interpolation to get the right columns and asign them one by one to w_x_low_z_high
-                f = interp1d(z_reg_orig, var_orig_col, kind='next')
+                #f = interp1d(z_reg_orig, var_orig_col, kind='next')
+                f = interp1d(z_reg_orig, var_orig_col, kind='nearest')
                 try:
     
                     var_reg_inter = f(z_reg_mid)
@@ -914,7 +921,7 @@ def proc_beard_regularize(reg_var = 'w',
     if data_dim_flag==1:
         filename_column = []
         #uses glob to get all files which contain column.
-        column_files =     glob.glob(directory_input+date+'/*.column.*.*.*.nc')
+        column_files =     glob.glob(directory_input+date+'/*column*.nc')
          
         for c_file in column_files:
             filename_column.append(c_file)
@@ -942,8 +949,9 @@ def proc_beard_regularize(reg_var = 'w',
 
 
 
-    filename_prof=directory_input+date+'/testbed.default.0000000.nc'
-    
+    #filename_prof=directory_input+date+'/testbed.default.0000000.nc'
+    #print(directory_input+date+ '/testbed?default?0*.nc')
+    filename_prof=glob.glob(directory_input+date+'/testbed?default?0*.nc')[0]
     if date=='bomex':
         filename_prof=directory_input+date+'/bomex.default.0000000.nc'
 
@@ -1256,8 +1264,10 @@ def proc_beard_regularize(reg_var = 'w',
 
 
                 #1D vertical interpolation to get the right columns and asign them one by one to w_x_low_z_high
-                f_x = interp1d(z_reg_orig, scaling_factor_x_prof_ext, kind='next')
-                f_y = interp1d(z_reg_orig, scaling_factor_y_prof_ext, kind='next')
+                #f_x = interp1d(z_reg_orig, scaling_factor_x_prof_ext, kind='next')
+                #_y = interp1d(z_reg_orig, scaling_factor_y_prof_ext, kind='next')
+                f_x = interp1d(z_reg_orig, scaling_factor_x_prof_ext, kind='nearest')
+                f_y = interp1d(z_reg_orig, scaling_factor_y_prof_ext, kind='nearest')
                 scaling_factor_x_inter = f_x(z_reg_mid)
                 scaling_factor_y_inter = f_y(z_reg_mid)
 
@@ -1502,7 +1512,7 @@ def proc_beard_regularize(reg_var = 'w',
     xr_dataset.attrs = settings_dict
 
     #Making save string
-    save_string_base = '_beard_'+date+'_d'+str(data_dim_flag)+'_cb'+str(base_smoothing_flag)+'_an'+str(anomaly_flag)+'_ct'+str(chord_times)
+    save_string_base = '_beard_'+date+'_d'+str(data_dim_flag)+'_cb'+str(base_smoothing_flag)+'_an'+str(anomaly_flag)+'_ct'+str(chord_times)+'_ce'+str(int(curtain_extra))
     if data_dim_flag==3:
         save_string_base = save_string_base+'_sf'+str(scale_flag)
     if N_it_min>0:
@@ -1512,7 +1522,7 @@ def proc_beard_regularize(reg_var = 'w',
     if boundary_scaling_flag==1:
         save_string_base = 'star'+save_string_base
     save_string_base = save_string_base+'_'+special_name+'_N'+str(n_curtain)
-    save_string = 'data_curtains/'+ reg_var+save_string_base +'.nc'
+    save_string = directory_output+ reg_var+save_string_base +'.nc'
     xr_dataset.to_netcdf(save_string)
     print('saved beard data to '+save_string)
 
@@ -1528,7 +1538,7 @@ def proc_beard_regularize(reg_var = 'w',
         xr_dataset[reg_var+'_up'].attrs['n']  =n_curtain_bin_up
         xr_dataset[reg_var+'_dw'].attrs['n']  =n_curtain_bin_dw
         xr_dataset.attrs = settings_dict
-        save_string = 'data_curtains/'+ reg_var+save_string_base+'_sizebin.nc'
+        save_string = directory_output+ reg_var+save_string_base+'_sizebin.nc'
         xr_dataset.to_netcdf(save_string)
         print('saved size binned beards to '+save_string)
     
@@ -1561,19 +1571,19 @@ def proc_beard_regularize(reg_var = 'w',
 
 def proc_pdf(reg_var = 'w',
                         date_str='20160611',
-                        directory_input='/data/testbed/lasso/sims/',
+                        directory_input  ='/data/testbed/lasso/sims/',
+                        directory_output ='data_pdfs/',
                         data_dim_flag=3,
                         special_name='',
                         N_it_max=1e9,
                         N_it_min=0,
                         anomaly_flag =0,                   
-                        N_bins=200,
+                        N_bins=400,
                         base_percentile = 25,
                         boundary_scaling_flag = 1,
                         range_var = [-10,10] ):
 
     
-    directory_output = 'data_pdfs/'
 
 
     #We are starting out with histograms of w from -10 to 10 and a 0.1 spacing
@@ -1619,7 +1629,8 @@ def proc_pdf(reg_var = 'w',
 
 
 
-    filename_prof=directory_input+date+'/testbed.default.0000000.nc'
+    filename_prof=glob.glob(directory_input+date+'/testbed?default?0*.nc')[0]
+    #filename_prof=directory_input+date+'/testbed.default.0000000.nc'
 
     if date=='bomex':
         filename_prof=directory_input+date+'/bomex.default.0000000.nc'
@@ -1867,46 +1878,51 @@ def proc_pdf(reg_var = 'w',
 
         print('iterating through step ',it,'which contains ',len(cbl_cl_idx),'cloudy columns')
 
-        #Now calculating the var at cloud base
-        var_cl_base=var_2d[cl_base[cbl_cl_idx]-1,cbl_cl_idx]
-        
-        #If boundary scaling is used, the variable is scaled accordingly
-        #Only called if there are any clouds
-        if boundary_scaling_flag == 1 and len(cbl_cl_idx)>1:
+
+        if len(cbl_cl_idx)>0:
+            #Now calculating the var at cloud base
+            var_cl_base=var_2d[cl_base[cbl_cl_idx]-1,cbl_cl_idx]
             
-            #First thing to do is calculate the chord base using the 25 percentile in agreement with Neil
-            
-            if data_dim_flag==3:
-                z_idx_base_default = math.floor(np.percentile(cl_base[cbl_cl_idx],base_percentile))
-            # Can't think of a good way to do this, will throw up an error for the mean time. 
-            if data_dim_flag==1:
-                print('sorry, but I havent implemented star scaling for 2d data')
-                sys.exit()
+            #If boundary scaling is used, the variable is scaled accordingly
+            #Only called if there are any clouds
+            if boundary_scaling_flag == 1 and len(cbl_cl_idx)>1:
+                
+                #First thing to do is calculate the chord base using the 25 percentile in agreement with Neil
+                
+                if data_dim_flag==3:
+                    z_idx_base_default = math.floor(np.percentile(cl_base[cbl_cl_idx],base_percentile))
+                # Can't think of a good way to do this, will throw up an error for the mean time. 
+                if data_dim_flag==1:
+                    print('sorry, but I havent implemented star scaling for 1d data')
+                    sys.exit()
 
 
 
-            
-            #Now adding the boundary scaling using w*
-            #Is a bit overcooked currently as it only works with 3D data and thus all surface fluxes are the same everywhere. 
-            surf_flux = np.mean(bflux_s_1d)
-            base_height = z_idx_base_default*dz
+                
+                #Now adding the boundary scaling using w*
+                #Is a bit overcooked currently as it only works with 3D data and thus all surface fluxes are the same everywhere. 
+                surf_flux = np.mean(bflux_s_1d)
+                base_height = z_idx_base_default*dz
 
-            w_star=(base_height*surf_flux)**(1/3) 
-            if reg_var=='w': 
-                boundary_scaling = w_star
-            if reg_var=='qt': 
-                surf_flux = np.mean(qtflux_s_1d)
-                boundary_scaling = surf_flux/w_star
-            if reg_var=='thl': 
-                thl_flux = np.mean(thlflux_s_1d)
-                boundary_scaling = surf_flux/w_star
+                w_star=(base_height*surf_flux)**(1/3) 
+                if reg_var=='w': 
+                    boundary_scaling = w_star
+                if reg_var=='qt': 
+                    surf_flux = np.mean(qtflux_s_1d)
+                    boundary_scaling = surf_flux/w_star
+                if reg_var=='thl': 
+                    thl_flux = np.mean(thlflux_s_1d)
+                    boundary_scaling = surf_flux/w_star
 
-            var_cl_base = var_cl_base/boundary_scaling
+                var_cl_base = var_cl_base/boundary_scaling
 
-        #Calculating the histogram, and adding it to the total histogram
-        var_hist,bin_edges = np.histogram(var_cl_base,range=range_var,bins=N_bins)
+            #Calculating the histogram, and adding it to the total histogram
+            var_hist,bin_edges = np.histogram(var_cl_base,range=range_var,bins=N_bins)
 
-        var_hist_sum = var_hist_sum+var_hist
+            var_hist_sum = var_hist_sum+var_hist
+
+        else:
+            print('no cloudy columns apparently')
 
 
     var_pdf = var_hist_sum
@@ -1922,7 +1938,7 @@ def proc_pdf(reg_var = 'w',
         save_string_base = 'star'+save_string_base
 
 
-    save_string = 'data_pdfs/'+ reg_var+save_string_base
+    save_string = directory_output+ reg_var+save_string_base
     #if data_dim_flag==3:
     #    save_string= save_string+'_'+direction_slice
 
