@@ -9,8 +9,10 @@ import math
 from netCDF4 import Dataset
 import os
 
-from unionfind import UnionFind
-import matplotlib.pyplot as plt
+try:
+    from unionfind import UnionFind
+except:
+    print('hope you dont need unionfind')
 import time
 
 ###########################################################################################################################
@@ -719,6 +721,40 @@ def var_log_binner(var,bin_var,bin_min=0,step_ratio=2,N_min=10):
     return binned_var, bin_n, bins, CSD
 
 
+
+#Little subplot labeling script found online from https://gist.github.com/tacaswell/9643166
+#Put here for no good reason
+#Warning, if you define your colorbar using an additional axes it will give that a label as well, which is pretty funny but also very annoying. 
+
+import string
+from itertools import cycle
+from six.moves import zip
+def label_axes_abcd(fig, labels=None, loc=None, **kwargs):
+    """
+    Walks through axes and labels each.
+    kwargs are collected and passed to `annotate`
+    Parameters
+    ----------
+    fig : Figure
+         Figure object to work on
+    labels : iterable or None
+        iterable of strings to use to label the axes.
+        If None, lower case letters are used.
+    
+    loc : len=2 tuple of floats
+        Where to put the label in axes-fraction units
+    """
+    if labels is None:
+        labels = string.ascii_lowercase
+    
+    # re-use labels rather than stop labeling
+    labels = cycle(labels)
+    if loc is None:
+        loc = (.9, .9)
+    for ax, lab in zip(fig.axes, labels):
+        ax.annotate(lab, xy=loc,
+                    xycoords='axes fraction',
+                    **kwargs)
 ###########################################################################################################################
 #Graveyard
 ###########################################################################################################################

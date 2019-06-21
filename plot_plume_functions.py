@@ -202,7 +202,8 @@ def Area_percentile_x(x,fx,percentile):
 
 def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin,t_steps=20,prof_var='w profile',bin_string='',prescribed_width=0,
                                   prof_height='Area profile',percentile=90.,height_plot_flag=2,t_window=0,
-                                  fixed_scaling = 0,plume_min=1,simple_mean_flag=0,n_z=256,dz=25,n_col=2):
+                                  fixed_scaling = 0,plume_min=1,simple_mean_flag=0,n_z=256,dz=25,n_col=2,
+                                  xmax=0,single_t=0):
 
     #Reconstructs EDMFn comparable plumes for given bins from Courvreux plumes. Then plots them colored according to time.
     #max_bin: Number of bins
@@ -217,8 +218,13 @@ def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin,t_steps=20,prof_var=
     #fixed_scaling: if not zero a this parameter is used 
     #plume_min: numbers of plumes needed to be plotted
     #simple_mean_flag=0: if set to one uses a simple mean instead of reconstructing the profiles
+    #xmax sets the right xlim
+    #simle_t: if bigger than 1 plots only a single subplot with all size bins at the single_t timestep
     #See project report 2019-01 for full desciption of reconstruction, but it involves an area weighting and Volume compensation
     #First calculate area weighted profile: 
+    
+    #2019-06 adding a matrix of all plums to be exporptet
+    
     clus_prop['weighted var'] = clus_prop['Area profile']*clus_prop[prof_var]
 
 
@@ -248,16 +254,26 @@ def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin,t_steps=20,prof_var=
     #Creating height matrix to enable plotting it later on
     plume_height = np.zeros([max_bin,t_steps])
     plume_x      = np.zeros([max_bin,t_steps])
+
+    #Creating bin, time, z profile  matrix to pass back when desired
+    plume_profiles_btz = np.zeros([max_bin,t_steps,n_z])
+
     
-    fig, axes = plt.subplots(1, max_bin,figsize=[20,10],sharey=True,sharex=True)
+    if single_t==0:   fig, axes = plt.subplots(1, max_bin,figsize=[20,10],sharey=True,sharex=True)
+    else: fig, axes = plt.subplots(1, 1,figsize=[10,10])
 
     for b in range(max_bin):
 
         clus_tmp = clus_prop.iloc[bin_ind==b+1]
+        blabel =  str(bins[b])[:-2] + '-' + str(bins[b+1])[:-2]
+        if single_t >0: color_rain = rainbow(0 + float(b)/float(max_bin))
 
-
-        for t in range(t_steps):
-            color_rain = rainbow(0 + float(t)/float(t_steps))
+        if single_t==0:
+            t_iterable = np.arange(t_steps).astype(int)
+        else:
+            t_iterable = [single_t]
+        for t in t_iterable:
+            if single_t ==0: color_rain = rainbow(0 + float(t)/float(t_steps))
             #idx_time = np.where(clus_tmp['time']==time_vec[t])[0] 
             
             #expanding to include a time window before and after. First calculating t difference to current timestep
@@ -294,56 +310,73 @@ def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin,t_steps=20,prof_var=
                     prof_plot=func_prof_mean(clus_tmp_t,prof_var,n_z)
                     
 
-                
-                axes[b].plot(prof_plot,prof_z,color=color_rain,alpha=1,label=tlabel[11:16])
-                
+                if single_t ==0: 
+                    axes[b].plot(prof_plot,prof_z,color=color_rain,alpha=1,label=tlabel[11:16])
+                else:
+                    axes.plot(prof_plot,prof_z,color=color_rain,alpha=1,label=blabel)
+
                 # Saving height data to plot later on
                 plume_height[b,t] = z_scaled
                 plume_x     [b,t] = np.nanmax(prof_plot)
 
+
+                #Saving pplume profile
+                plume_profiles_btz[b,t,:] = prof_plot
                 
                     
+        if single_t==0:         ax = axes[b]
+        else: ax = axes
         #plotting height info
         if height_plot_flag>0:
             for t in range(t_steps):
                 color_rain = rainbow(0 + float(t)/float(t_steps))
                 if height_plot_flag==1:
-                    axes[b].hlines(plume_height[b,t],0,plume_x[b,t],color=color_rain)
+                    ax.hlines(plume_height[b,t],0,plume_x[b,t],color=color_rain)
                 if height_plot_flag==2:
-                    axes[b].plot(plume_x[b,t],plume_height[b,t],color='k',markersize=6,marker='o')
-                    axes[b].plot(plume_x[b,t],plume_height[b,t],color=color_rain,markersize=4,marker='o')
+                    ax.plot(plume_x[b,t],plume_height[b,t],color='k',markersize=6,marker='o')
+                    ax.plot(plume_x[b,t],plume_height[b,t],color=color_rain,markersize=4,marker='o')
                 if height_plot_flag==3:
-                    axes[b].hlines(plume_height[b,t],0,1,color=color_rain)
-                    axes[b].vlines(1,0,plume_height[b,t],color=color_rain)
-                    #axes[b].plot(plume_x[b,t],plume_height[b,t],color='k',markersize=6,marker='o')
-                    #axes[b].plot(plume_x[b,t],plume_height[b,t],color=color_rain,markersize=4,marker='o')
+                    ax.hlines(plume_height[b,t],0,1,color=color_rain)
+                    ax.vlines(1,0,plume_height[b,t],color=color_rain)
+                    #ax.plot(plume_x[b,t],plume_height[b,t],color='k',markersize=6,marker='o')
+                    #ax.plot(plume_x[b,t],plume_height[b,t],color=color_rain,markersize=4,marker='o')
                                     
 
-        
-        axes[b].set_title(bin_string+'bin: \n ' +str(bins[b])[:-2] + '-' + str(bins[b+1])[:-2])
-        axes[b].set_xlabel(prof_var)
+        if single_t ==0: 
+            ax.set_title(bin_string+'bin: \n ' +str(bins[b])[:-2] + '-' + str(bins[b+1])[:-2])
+            ax.set_xlabel(prof_var)
+        else: 
+            ax.set_title('time=: ' +tlabel)
+            ax.set_xlabel(prof_var)
         
 
         
     
     if n_col>0:
-        if t_window>0:
-            l1 = axes[0].legend(ncol=n_col,frameon=False,title='+- ' + str(t_window)+ ' s')
+        if single_t ==0:
+            if t_window>0:
+                l1 = ax.legend(ncol=n_col,frameon=False,title='+- ' + str(t_window)+ ' s')
+            else:
+                l1 = ax.legend(ncol=n_col,frameon=False)
         else:
-            l1 = axes[0].legend(ncol=n_col,frameon=False)
+            l1 = ax.legend(ncol=n_col,frameon=False, title = 'bin sizes [m]')
+             
 
     plt.subplots_adjust(wspace=0.02, hspace=0.02)
 
-    ax1=axes[0]
     
-    ax1.set_ylim([0,3500])
-    ax1.set_xlim([0,6])
+    ax.set_ylim([0,3500])
+    ax.set_xlim([0,6])
     
-    ax1.set_ylim([0,1.1*np.nanmax(plume_height.ravel())])
-    ax1.set_xlim([0,1.1*np.nanmax(plume_x.ravel())])
-    
-    ax1.set_ylabel('z in m')
-    return fig
+    ax.set_ylim([0,1.1*np.nanmax(plume_height.ravel())])
+    ax.set_xlim([0,1.1*np.nanmax(plume_x.ravel())])
+   
+    if xmax>0: 
+        ax.set_xlim(right=xmax)
+
+
+    ax.set_ylabel('z in m')
+    return fig,plume_profiles_btz,plume_height
 
 
 
