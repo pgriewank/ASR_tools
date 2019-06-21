@@ -5,6 +5,9 @@
 
 #I prefer running with nohup and -u to get ongoing output: nohup python3 -u run_postprocessing.py '20160611_micro' > output_postpro.txt 
 
+#Requires proc_chords_xarray.py and cusize_functions.py from https://github.com/pgriewank/ASR_tools
+
+
 #Individual functions to call. Each saves one or two files:
 #proc_chords d3, ct0 
 #proc_chords d1, ct1, all chords
