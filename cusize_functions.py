@@ -685,7 +685,7 @@ def var_linear_binner(var,bin_var,bin_width=100):
 #Then detects the indexes of which clouds are in which bin
 #Also directly calculates the cloud size distribution (CSD)
 #Before deviding by the width turn it into a CSD (cloud size density distribution)
-def log_binner(var,bin_min=25,step_ratio=2):
+def log_binner(var,bin_min=25,step_ratio=2,N_min=0):
     max_val   = max(var)
     min_val   = min(var)
     #bin_min = max(min_val,bin_min)
@@ -699,9 +699,10 @@ def log_binner(var,bin_min=25,step_ratio=2):
     ind       = np.digitize(var,bins)
     CSD       = np.zeros(bin_n)
     for b in range(bin_n):
-
-        CSD[b] = float(np.count_nonzero(ind==b+1))/(bins[b+1]-bins[b])
-
+        if len(ind[ind==b+1])>N_min:
+            CSD[b] = float(np.count_nonzero(ind==b+1))/(bins[b+1]-bins[b])
+        else:
+            CSD[b] = 'nan'
     return bin_n, bins, ind, CSD 
 
 
