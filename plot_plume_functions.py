@@ -200,31 +200,42 @@ def Area_percentile_x(x,fx,percentile):
 
 
 
-def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin,t_steps=20,prof_var='w profile',bin_string='',prescribed_width=0,
+def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin=5,t_steps=20,prof_var='w profile',bin_string='',prescribed_width=0,
                                   prof_height='Area profile',percentile=90.,height_plot_flag=2,t_window=0,
                                   fixed_scaling = 0,plume_min=1,simple_mean_flag=0,n_z=256,dz=25,n_col=2,
-                                  xmax=0,single_t=0):
-
-    #Reconstructs EDMFn comparable plumes for given bins from Courvreux plumes. Then plots them colored according to time.
-    #max_bin: Number of bins
-    #t_steps: number of timesteps to plot
-    #prof_var: variable to plot. Must be profile, and must be in deviations from background state.
-    #prof_height: profile variable to determine plume height from
-    #percentile: percentile used to determine height from prof_height variable
-    #height_plot_flag 0: keine height information, 1: baren, 2: punkt
-    #bin_string: text string for bin label
-    #precribed_width: defines bin width
-    #t_window: time before and after which are included in the average in seconds
-    #fixed_scaling: if not zero a this parameter is used 
-    #plume_min: numbers of plumes needed to be plotted
-    #simple_mean_flag=0: if set to one uses a simple mean instead of reconstructing the profiles
-    #xmax sets the right xlim
-    #simle_t: if bigger than 1 plots only a single subplot with all size bins at the single_t timestep
-    #See project report 2019-01 for full desciption of reconstruction, but it involves an area weighting and Volume compensation
+                                  xmax=0,single_t=0,A_base_sorting = 0):
+    """     
+    Reconstructs EDMFn comparable plumes for given bins from Courvreux plumes. Then plots them colored according to time.
+    
+    See project report 2019-01 for full desciption of reconstruction, but it involves an area weighting and Volume compensation
+    
+    Parameters:
+        max_bin: Number of bins
+        t_steps: number of timesteps to plot
+        prof_var: variable to plot. Must be profile, and must be in deviations from background state.
+        prof_height: profile variable to determine plume height from
+        percentile: percentile used to determine height from prof_height variable
+        height_plot_flag 0: keine height information, 1: baren, 2: punkt
+        bin_string: text string for bin label
+        precribed_width: defines bin width
+        t_window: time before and after which are included in the average in seconds
+        fixed_scaling: if not zero a this parameter is used 
+        plume_min: numbers of plumes needed to be plotted
+        simple_mean_flag=0: if set to one uses a simple mean instead of reconstructing the profiles
+        xmax sets the right xlim
+        single_t: if bigger than 1 plots only a single subplot with all size bins at the single_t timestep
+        A_base_sorting: if 1 it overrides the standard linear binner with the A_base binner, should help clean up the smallest bins 
+    
+    Returns:
+        fig: the figure
+        axes: the figure axes
+        plume_profiles_btz: profiles of reconstructed profiles for each bin and time 
+        plume_height: height of plumes for each bin and time
+    """
+    from cusize_functions import func_A_base_binner
+    from cusize_functions import linear_binner
+    
     #First calculate area weighted profile: 
-    
-    #2019-06 adding a matrix of all plums to be exporptet
-    
     clus_prop['weighted var'] = clus_prop['Area profile']*clus_prop[prof_var]
 
 
@@ -237,7 +248,11 @@ def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin,t_steps=20,prof_var=
         print('bin_width override:',bin_width)
         
 
-    bin_n, bins, bin_ind, csd = linear_binner(bin_width,var_bin)
+    if A_base_sorting: 
+        bin_n, bins, bin_ind, csd = func_A_base_binner(clus_prop,max_bin=max_bin,prescribed_width=prescribed_width,
+                                    percentile=percentile,t_window=t_window,plume_min=plume_min,n_z=n_z,dz=dz)
+    else: 
+        bin_n, bins, bin_ind, csd = linear_binner(bin_width,var_bin)
 
     x_bin = (bins[:-1]+bins[1:])/2.
 
@@ -260,7 +275,7 @@ def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin,t_steps=20,prof_var=
 
     
     if single_t==0:   fig, axes = plt.subplots(1, max_bin,figsize=[20,10],sharey=True,sharex=True)
-    else: fig, axes = plt.subplots(1, 1,figsize=[10,10])
+    else: fig, axes = plt.subplots(1, 1,figsize=[5,5])
 
     for b in range(max_bin):
 
@@ -329,7 +344,8 @@ def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin,t_steps=20,prof_var=
         #plotting height info
         if height_plot_flag>0:
             for t in range(t_steps):
-                color_rain = rainbow(0 + float(t)/float(t_steps))
+                if single_t == 0:    color_rain = rainbow(0 + float(t)/float(t_steps))
+                if single_t == 1:    color_rain = rainbow(0 + float(b)/float(max_bin))
                 if height_plot_flag==1:
                     ax.hlines(plume_height[b,t],0,plume_x[b,t],color=color_rain)
                 if height_plot_flag==2:
@@ -359,7 +375,7 @@ def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin,t_steps=20,prof_var=
             else:
                 l1 = ax.legend(ncol=n_col,frameon=False)
         else:
-            l1 = ax.legend(ncol=n_col,frameon=False, title = 'bin sizes [m]')
+            l1 = ax.legend(ncol=n_col,frameon=False, title = r'bin sizes in $\sqrt{A}$ [m]')
              
 
     plt.subplots_adjust(wspace=0.02, hspace=0.02)
@@ -376,7 +392,7 @@ def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin,t_steps=20,prof_var=
 
 
     ax.set_ylabel('z in m')
-    return fig,plume_profiles_btz,plume_height
+    return fig, axes, plume_profiles_btz,plume_height
 
 
 
