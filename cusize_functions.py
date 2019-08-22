@@ -8,6 +8,8 @@ import numpy as np
 import math
 from netCDF4 import Dataset
 import os
+from plot_plume_functions import *
+
 
 try:
     from unionfind import UnionFind
@@ -627,6 +629,55 @@ def func_vert_mean(idx_z,idx_x,idx_y,var):
         vert_n[z]=len(ind[0])*1.0
     return vert_prof, vert_n
 
+#Optimized version of func_vert_mean that should (fingers crossed) be a lot faster for bigger plumes
+#It seems that for some reason idx_z is already sorted, so it could be further sped up by replacing z_sort with np.arange
+def func_vert_mean_sorted(idx_z,idx_x,idx_y,var):
+    z_unique = np.unique(idx_z)
+    #print(z_unique)
+    vert_prof    = np.zeros(var.shape[0])
+    vert_prof[:] = 'nan'
+    vert_n    = np.zeros(var.shape[0])
+    vert_n[:] = 'nan'
+    z_sort = np.argsort(idx_z, kind='mergesort')
+    idx_z_sort= np.split(z_sort, np.cumsum(np.bincount(idx_z)[:-1]))
+    for z in z_unique:
+        ind = idx_z_sort[z]
+        #ind=np.where(idx_z==z)
+        #print(ind)
+        #print(idx_z[ind],idx_x[ind],idx_y[ind])
+        vert_prof[z]=np.mean(var[idx_z[ind],idx_x[ind],idx_y[ind]])
+        vert_n[z]=len(ind)*1.0
+    return vert_prof, vert_n
+
+
+def func_vert_mean_sorted_argv(idx_z,idx_x,idx_y,*argv):
+    """
+        A quicker version of func_vert_mean
+        Speed up thanks to:
+        I: getting rid of np.where and using the sort indexing
+        II: ability to pass multiple to be processed so that the indexes don't need to be found again for each var
+
+        parameters: 
+        z, x, y, indexes of the field to be averaged over
+
+    """
+    z_unique = np.unique(idx_z)
+    var = argv[0]
+    vert_prof    = np.zeros([var.shape[0],len(argv)])
+
+    vert_prof[:,:] = 'nan'
+    vert_n    = np.zeros(var.shape[0])
+    vert_n[:] = 'nan'
+    z_sort = np.argsort(idx_z, kind='mergesort')
+    idx_z_sort= np.split(z_sort, np.cumsum(np.bincount(idx_z)[:-1]))
+    for z in z_unique:
+        ind = idx_z_sort[z]
+        vert_n[z]=len(ind)*1.0
+        for a in range(len(argv)):
+            var = argv[a]
+            vert_prof[z,a]=np.mean(var[idx_z[ind],idx_x[ind],idx_y[ind]])
+    return vert_prof, vert_n
+
 ###Similar to func_vert_mean, but calculates the percentile instead
 def func_vert_percentile(idx_z,idx_x,idx_y,var,percentile):
     z_unique = np.unique(idx_z)
@@ -721,6 +772,106 @@ def var_log_binner(var,bin_var,bin_min=0,step_ratio=2,N_min=10):
 
     return binned_var, bin_n, bins, CSD
 
+
+def func_A_base_binner(clus_prop,max_bin=5,prescribed_width=0,percentile=80.,t_window=0,
+                                  plume_min=1,n_z=256,dz=25):
+    """     
+    A binner that first uses a linear area binner as a first guess, and then bumps high plumes up a bin
+    
+    The precise definition of what constitutes too high is very arbitrary. Current version uses when
+    the middle plume height is higher than the calculated height of the plume bin.
+    
+    Was derived from the full reconstruction plot function in a hurry in time for the paracon workshop, which explains a lot of its naming. 
+    
+    Parameters:
+        max_bin: Number of bins
+        prof_height: profile variable to determine plume height from
+        percentile: percentile used to determine height from prof_height variable
+        precribed_width: defines bin width
+        t_window: time before and after which are included in the average in seconds, makes for a smoother height value
+        plume_min: numbers of plumes needed for the height to be able to be determined. If not fulfilled height is zero, all plumes start to high for that bin. This isn't great
+    
+    Returns:
+        bin_n, bins,bin_ind,csd: same as the linear binner. 
+    """
+    
+    plume_sq_Area = clus_prop['sq Area']
+    prof_height = 'Area profile'
+
+    #determining bin width using the 99.9th percentile
+    max_var = np.percentile(plume_sq_Area,99.9)
+    bin_width = round_down(max_var/max_bin)
+    print('bin_width:',bin_width)
+    if prescribed_width>0:
+        bin_width = prescribed_width
+        print('bin_width override:',bin_width)
+
+
+    bin_n, bins, bin_ind, csd = linear_binner(bin_width,plume_sq_Area)
+
+
+    time_vec = np.unique(clus_prop['time'])
+
+    #limiting t_steps to avoid issues
+    t_steps = len(time_vec)
+
+    prof_z=np.linspace(0,n_z*dz,n_z)+dz/2.
+
+    #Creating height matrix to enable plotting it later on
+    plume_height = np.zeros([max_bin,t_steps])
+    plume_x      = np.zeros([max_bin,t_steps])
+    
+    #Creating bin, time, z profile  matrix to pass back when desired
+    plume_profiles_btz = np.zeros([max_bin,t_steps,n_z])
+    
+    
+    #Ok, now that the Area binning is ready, we calculate the height for each bin at each time step
+
+    for b in range(max_bin):
+
+        clus_tmp = clus_prop.iloc[bin_ind==b+1]
+        t_iterable = np.arange(t_steps).astype(int)
+        for t in t_iterable:
+            #expanding to include a time window before and after. First calculating t difference to current timestep
+            delta_t = abs((clus_tmp['time']-time_vec[t])/np.timedelta64(1, 's'))
+
+            idx_time = np.where(delta_t<=t_window)[0] 
+            clus_tmp_t = clus_tmp.iloc[idx_time]
+
+            if len(idx_time)>plume_min:
+                
+                #Getting height according to percentile at 1 m percision using linear interpolation 
+                prof_sum_height = func_prof_sum(clus_tmp_t,prof_height,n_z)
+                
+                z_percentile=Area_percentile_x(prof_z,prof_sum_height,percentile)
+                z_scaled = z_percentile*100./percentile
+                
+                # Saving height data to plot later on
+                plume_height[b,t] = z_scaled
+
+    #So now we have plume height, now we go through the plumes and move all plumes which are too high to the according bin. 
+    for b in range(max_bin):
+        for t in t_iterable:
+            #bump_up_idx = np.where((bin_ind==b+1) & (clus_prop['time']==time_vec[t]) & (clus_prop['base']>plume_height[b,t]))
+            #lets try making it more restrictibe, namely if half the plume is above the detected height
+            bump_up_idx = np.where((bin_ind==b+1) & (clus_prop['time']==time_vec[t]) & ((clus_prop['base']+clus_prop['height']/2)>plume_height[b,t]))
+            #print(b,t,bump_up_idx)
+            bin_ind[bump_up_idx] = bin_ind[bump_up_idx] + 1
+
+
+
+    #And then we have to recalculated the size distribution         
+    for b in range(bin_n):
+        if len(bin_ind[bin_ind==b+1])>plume_min:
+            csd[b] = float(np.count_nonzero(bin_ind==b+1))/(bins[b+1]-bins[b])
+        else:
+            csd[b] = 'nan'
+
+    return bin_n, bins,bin_ind,csd
+
+################################################################################################
+#Random small stuff
+################################################################################################
 
 
 #Little subplot labeling script found online from https://gist.github.com/tacaswell/9643166
