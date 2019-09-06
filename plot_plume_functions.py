@@ -31,15 +31,16 @@ import pandas as pd
 
 def func_prof_mean(clus_prop,var_name,n_z):
     
-    flux_matrix = np.zeros([n_z,len(clus_prop)])
+    #flux_matrix = np.zeros([n_z,len(clus_prop)])
+    flux_matrix = np.vstack(clus_prop[var_name].values)
     flux_vec   = np.zeros(n_z)
     flux_vec[:]    = 'nan'
-    flux_matrix[:] = 'nan'
+    #flux_matrix[:] = 'nan'
     
-    for i in range(len(clus_prop)):
-        flux_matrix[:,i] = clus_prop[var_name].iloc[i][:].ravel()
+    #for i in range(len(clus_prop)):
+    #    flux_matrix[:,i] = clus_prop[var_name].iloc[i][:].ravel()
     for k in range(n_z):
-        flux_vec[k]   = np.nanmean(flux_matrix[k,:])
+        flux_vec[k]   = np.nanmean(flux_matrix[:,k])
     
     return(flux_vec)
 
@@ -50,12 +51,13 @@ def func_prof_mean(clus_prop,var_name,n_z):
 
 def func_prof_sum(clus_prop,var_name,n_z):
     
-    flux_matrix = np.zeros([n_z,len(clus_prop)])
+    flux_matrix = np.vstack(clus_prop[var_name].values)
+    #flux_matrix = np.zeros([n_z,len(clus_prop)])
     flux_vec   = np.zeros(n_z)
-    for i in range(len(clus_prop)):
-        flux_matrix[:,i] = clus_prop[var_name].iloc[i][:].ravel()
+    #for i in range(len(clus_prop)):
+    #    flux_matrix[:,i] = clus_prop[var_name].iloc[i][:].ravel()
     for k in range(n_z):
-        flux_vec[k]   = np.nansum(flux_matrix[k,:])
+        flux_vec[k]   = np.nansum(flux_matrix[:,k])
     
     return(flux_vec)
 
@@ -202,8 +204,9 @@ def Area_percentile_x(x,fx,percentile):
 
 def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin=5,t_steps=20,prof_var='w profile',bin_string='',prescribed_width=0,
                                   prof_height='Area profile',percentile=90.,height_plot_flag=2,t_window=0,
-                                  fixed_scaling = 0,plume_min=1,simple_mean_flag=0,n_z=256,dz=25,n_col=2,
-                                  xmax=0,single_t=0,A_base_sorting = 0):
+                                  fixed_scaling = 0,plume_min=1,simple_mean_flag=0,simple_sum_flag=0,
+                                  n_z=256,dz=25,n_col=2,
+                                  xmax=0,single_t=None,A_base_sorting = 0):
     """     
     Reconstructs EDMFn comparable plumes for given bins from Courvreux plumes. Then plots them colored according to time.
     
@@ -225,7 +228,8 @@ def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin=5,t_steps=20,prof_va
         xmax sets the right xlim
         single_t: if bigger than 1 plots only a single subplot with all size bins at the single_t timestep
         A_base_sorting: if 1 it overrides the standard linear binner with the A_base binner, should help clean up the smallest bins 
-    
+        simple_sum_flag: if 1 no reconstruction is applied, instead the sum of the chosen variable times the area is plotted. 
+
     Returns:
         fig: the figure
         axes: the figure axes
@@ -274,21 +278,21 @@ def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin=5,t_steps=20,prof_va
     plume_profiles_btz = np.zeros([max_bin,t_steps,n_z])
 
     
-    if single_t==0:   fig, axes = plt.subplots(1, max_bin,figsize=[20,10],sharey=True,sharex=True)
+    if single_t==None:   fig, axes = plt.subplots(1, max_bin,figsize=[20,10],sharey=True,sharex=True)
     else: fig, axes = plt.subplots(1, 1,figsize=[5,5])
 
     for b in range(max_bin):
 
         clus_tmp = clus_prop.iloc[bin_ind==b+1]
         blabel =  str(bins[b])[:-2] + '-' + str(bins[b+1])[:-2]
-        if single_t >0: color_rain = rainbow(0 + float(b)/float(max_bin))
+        color_rain = rainbow(0 + float(b)/float(max_bin))
 
-        if single_t==0:
+        if single_t==None:
             t_iterable = np.arange(t_steps).astype(int)
         else:
             t_iterable = [single_t]
         for t in t_iterable:
-            if single_t ==0: color_rain = rainbow(0 + float(t)/float(t_steps))
+            if single_t ==None: color_rain = rainbow(0 + float(t)/float(t_steps))
             #idx_time = np.where(clus_tmp['time']==time_vec[t])[0] 
             
             #expanding to include a time window before and after. First calculating t difference to current timestep
@@ -308,7 +312,7 @@ def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin=5,t_steps=20,prof_va
                 z_percentile=Area_percentile_x(prof_z,prof_sum_height,percentile)
                 z_scaled = z_percentile*100./percentile
                 
-                if simple_mean_flag==0:
+                if simple_mean_flag==0 and simple_sum_flag==0:
                     if fixed_scaling == 0: 
 
                         #print(b,t,z_percentile)
@@ -321,11 +325,17 @@ def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin=5,t_steps=20,prof_va
 
                     else:
                         prof_plot = func_prof_sum(clus_tmp_t,'weighted var',n_z)*fixed_scaling/number_of_plumes/x_bin[b]/x_bin[b]
-                else:
+                if simple_mean_flag==1 and simple_sum_flag==0:
                     prof_plot=func_prof_mean(clus_tmp_t,prof_var,n_z)
+                if simple_sum_flag==1:
+
+                    if prof_var == 'Area profile':
+                        prof_plot=func_prof_sum(clus_tmp_t,'Area profile',n_z)
+                    else:
+                        prof_plot=func_prof_sum(clus_tmp_t,'weighted var',n_z)
                     
 
-                if single_t ==0: 
+                if single_t ==None: 
                     axes[b].plot(prof_plot,prof_z,color=color_rain,alpha=1,label=tlabel[11:16])
                 else:
                     axes.plot(prof_plot,prof_z,color=color_rain,alpha=1,label=blabel)
@@ -339,12 +349,12 @@ def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin=5,t_steps=20,prof_va
                 plume_profiles_btz[b,t,:] = prof_plot
                 
                     
-        if single_t==0:         ax = axes[b]
+        if single_t==None:         ax = axes[b]
         else: ax = axes
         #plotting height info
         if height_plot_flag>0:
             for t in range(t_steps):
-                if single_t == 0:    color_rain = rainbow(0 + float(t)/float(t_steps))
+                if single_t == None:    color_rain = rainbow(0 + float(t)/float(t_steps))
                 if single_t == 1:    color_rain = rainbow(0 + float(b)/float(max_bin))
                 if height_plot_flag==1:
                     ax.hlines(plume_height[b,t],0,plume_x[b,t],color=color_rain)
@@ -358,18 +368,19 @@ def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin=5,t_steps=20,prof_va
                     #ax.plot(plume_x[b,t],plume_height[b,t],color=color_rain,markersize=4,marker='o')
                                     
 
-        if single_t ==0: 
+        ax.set_xlabel(prof_var)
+        if single_t ==None: 
             ax.set_title(bin_string+'bin: \n ' +str(bins[b])[:-2] + '-' + str(bins[b+1])[:-2])
-            ax.set_xlabel(prof_var)
         else: 
             ax.set_title('time=: ' +tlabel)
-            ax.set_xlabel(prof_var)
+        if simple_sum_flag ==1:
+            ax.set_xlabel('sum '+prof_var+' x A')
         
 
         
     
     if n_col>0:
-        if single_t ==0:
+        if single_t ==None:
             if t_window>0:
                 l1 = ax.legend(ncol=n_col,frameon=False,title='+- ' + str(t_window)+ ' s')
             else:
@@ -482,7 +493,7 @@ def plot_edmf_plumes(filename,t_steps = 24,var_string = 'w',ensemble_flag = 0,ma
     for b in range(max_bin):
         for t in range(t_steps):
             color_rain = rainbow(0 + float(t)/float(t_steps))
-            tlabel = str(time_vec[t])
+            tlabel = str(time_vec[t])[11:15]
             prof_plot = var[t,b,:]
             axes[b].plot(prof_plot,prof_z,color=color_rain,alpha=1,label=tlabel)#,linewidth=1)
             if np.max(prof_plot)>0.0:
@@ -490,6 +501,7 @@ def plot_edmf_plumes(filename,t_steps = 24,var_string = 'w',ensemble_flag = 0,ma
 
         axes[b].set_title('radius: \n' +str(bin_beg[b]) + '-' + str(bin_end[b]) + 'm')
         axes[b].set_xlabel(var_string)
+
 
     plt.subplots_adjust(wspace=0.02, hspace=0.02)
 

@@ -262,7 +262,9 @@ def proc_chords(          date_str='20160611',
             u_2d  = u_2d.transpose()
             v_2d  = file_col.variables['v'][:]
             v_2d  = v_2d.transpose()
-            
+           
+            #lets try saving memory by closing files
+            #file_col.close()
             
             #The needed cbl height
             cbl_1d = t_1d*0
