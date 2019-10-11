@@ -184,13 +184,20 @@ def Area_percentile_x(x,fx,percentile):
     #Is shit, can't believe that I couldn't find a stats function to do this
     x_interp = np.linspace(x[0],x[-1],x[-1]-x[0]+1)
     fx_interp = np.interp(x_interp, x, fx)
-    cy = np.cumsum(fx_interp)
+    cy = np.nancumsum(fx_interp)
     cy_norm = cy/cy[-1]
     idx=np.argmin(abs(cy_norm-percentile/100.))
 
     return x_interp[idx]
 
 
+def Area_percentile_cheap(x,fx,percentile):
+    #Cheap and less precise version of Area_percentile_x without any interpolation
+    cy = np.nancumsum(fx)
+    cy_norm = cy/cy[-1]
+    idx=np.argmin(abs(cy_norm-percentile/100.))
+
+    return x[idx]
 
 
 
@@ -202,15 +209,23 @@ def Area_percentile_x(x,fx,percentile):
 
 
 
-def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin=5,t_steps=20,prof_var='w profile',bin_string='',prescribed_width=0,
+
+
+def plot_prof_full_reconstruction(clus_prop,bin_var='sq_Area',max_bin=5,t_steps=20,prof_var='w profile',bin_string='',prescribed_width=0,
                                   prof_height='Area profile',percentile=90.,height_plot_flag=2,t_window=0,
                                   fixed_scaling = 0,plume_min=1,simple_mean_flag=0,simple_sum_flag=0,
                                   n_z=256,dz=25,n_col=2,
-                                  xmax=0,single_t=None,A_base_sorting = 0):
+                                  xmax=0,xmin=0,ymax=0,
+                                  single_t=None,
+                                  A_base_sorting = 0,
+                                  sorting_per=25):
     """     
-    Reconstructs EDMFn comparable plumes for given bins from Courvreux plumes. Then plots them colored according to time.
-    
-    See project report 2019-01 for full desciption of reconstruction, but it involves an area weighting and Volume compensation
+    Was originally a function explicitely to reconstructs mass flux comparable plumes for given bins from Courvreux plumes and plots them colored according to time.
+
+    See project report 2019-01 for full desciption of reconstruction, but the main gist is it involves an area weighting and Volume compensation correction. 
+
+    However, since then it has morfed into a massive plotting function and post processing function that is as useful as it is ugly with many many options. 
+    Most important flags are: single_t, simple_mean_flag, and simple sum flag.  
     
     Parameters:
         max_bin: Number of bins
@@ -224,12 +239,12 @@ def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin=5,t_steps=20,prof_va
         t_window: time before and after which are included in the average in seconds
         fixed_scaling: if not zero a this parameter is used 
         plume_min: numbers of plumes needed to be plotted
-        simple_mean_flag=0: if set to one uses a simple mean instead of reconstructing the profiles
-        xmax sets the right xlim
+        simple_mean_flag=0: if set to one uses a simple mean instead of reconstructing the profiles, if set to 2 makes an area weighted mean
+        xmin and xmax: sets xlim
         single_t: if bigger than 1 plots only a single subplot with all size bins at the single_t timestep
-        A_base_sorting: if 1 it overrides the standard linear binner with the A_base binner, should help clean up the smallest bins 
         simple_sum_flag: if 1 no reconstruction is applied, instead the sum of the chosen variable times the area is plotted. 
-
+        A_base_sorting: if 1 it overrides the standard linear binner with the func_A_base_binner, should help clean up the smallest bins 
+        sorting_per: Area percentile of clusters used to determine height for A_base binner. Is named cluster_per in func_A_base_binner for no good reason.  
     Returns:
         fig: the figure
         axes: the figure axes
@@ -242,7 +257,8 @@ def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin=5,t_steps=20,prof_va
     #First calculate area weighted profile: 
     clus_prop['weighted var'] = clus_prop['Area profile']*clus_prop[prof_var]
 
-
+    #Variable used to bin clusters
+    var_bin = clus_prop[bin_var]
     #determining bin width using the 99.9th percentile
     max_var = np.percentile(var_bin,99.9)
     bin_width = round_down(max_var/max_bin)
@@ -253,8 +269,7 @@ def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin=5,t_steps=20,prof_va
         
 
     if A_base_sorting: 
-        bin_n, bins, bin_ind, csd = func_A_base_binner(clus_prop,max_bin=max_bin,prescribed_width=prescribed_width,
-                                    percentile=percentile,t_window=t_window,plume_min=plume_min,n_z=n_z,dz=dz)
+        bin_n, bins, bin_ind = func_A_base_binner(clus_prop,max_bin=max_bin,prescribed_width=prescribed_width,percentile=percentile,t_window=t_window,plume_min=plume_min,n_z=n_z,dz=dz,bin_var=bin_var,cluster_per=sorting_per)
     else: 
         bin_n, bins, bin_ind, csd = linear_binner(bin_width,var_bin)
 
@@ -300,6 +315,7 @@ def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin=5,t_steps=20,prof_va
             
             idx_time = np.where(delta_t<=t_window)[0] 
             clus_tmp_t = clus_tmp.iloc[idx_time]
+            t_steps_included = np.unique(clus_tmp_t['time']).size
             tlabel = str(time_vec[t])
 
             if len(idx_time)>plume_min:
@@ -327,12 +343,15 @@ def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin=5,t_steps=20,prof_va
                         prof_plot = func_prof_sum(clus_tmp_t,'weighted var',n_z)*fixed_scaling/number_of_plumes/x_bin[b]/x_bin[b]
                 if simple_mean_flag==1 and simple_sum_flag==0:
                     prof_plot=func_prof_mean(clus_tmp_t,prof_var,n_z)
+                if simple_mean_flag==2 and simple_sum_flag==0:
+                    prof_plot=func_prof_sum(clus_tmp_t,'weighted var',n_z)/func_prof_sum(clus_tmp_t,'Area profile',n_z)
                 if simple_sum_flag==1:
-
+                    #It is important to scale by number of time steps included to not make the total sum bigger when inclding more timesteps. 
                     if prof_var == 'Area profile':
-                        prof_plot=func_prof_sum(clus_tmp_t,'Area profile',n_z)
+                        prof_plot=func_prof_sum(clus_tmp_t,'Area profile',n_z)/(25*25*1024*1024)/t_steps_included
+
                     else:
-                        prof_plot=func_prof_sum(clus_tmp_t,'weighted var',n_z)
+                        prof_plot=func_prof_sum(clus_tmp_t,prof_var,n_z)/t_steps_included
                     
 
                 if single_t ==None: 
@@ -392,7 +411,6 @@ def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin=5,t_steps=20,prof_va
     plt.subplots_adjust(wspace=0.02, hspace=0.02)
 
     
-    ax.set_ylim([0,3500])
     ax.set_xlim([0,6])
     
     ax.set_ylim([0,1.1*np.nanmax(plume_height.ravel())])
@@ -400,8 +418,11 @@ def plot_prof_full_reconstruction(clus_prop,var_bin,max_bin=5,t_steps=20,prof_va
    
     if xmax>0: 
         ax.set_xlim(right=xmax)
-
-
+    ax.set_xlim(left=xmin)
+    if ymax>0: ax.set_ylim(top=ymax)
+    
+    if single_t==None:         ax = axes[0]
+    else: ax = axes
     ax.set_ylabel('z in m')
     return fig, axes, plume_profiles_btz,plume_height
 

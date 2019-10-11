@@ -773,33 +773,51 @@ def var_log_binner(var,bin_var,bin_min=0,step_ratio=2,N_min=10):
     return binned_var, bin_n, bins, CSD
 
 
-def func_A_base_binner(clus_prop,max_bin=5,prescribed_width=0,percentile=80.,t_window=0,
-                                  plume_min=1,n_z=256,dz=25):
+
+
+
+
+
+def func_A_base_binner(clus_prop,max_bin=5,prescribed_width=0,percentile=70.,t_window=0,
+                                  plume_min=1,n_z=256,dz=25,w_sorting_flag=0,z_sorting_flag=1,bin_var='sq Area',cluster_per=50):
     """     
-    A binner that first uses a linear area binner as a first guess, and then bumps high plumes up a bin
-    
-    The precise definition of what constitutes too high is very arbitrary. Current version uses when
-    the middle plume height is higher than the calculated height of the plume bin.
-    
-    Was derived from the full reconstruction plot function in a hurry in time for the paracon workshop, which explains a lot of its naming. 
+    Ok, this is a reworking of the original func_A_base_binner. The original one was not designed to be what it turned into. 
+  
+    So the way this should work is that instead of first determining the plume height and then moving plumes up, it should iteratively move clusters from plume to plume until the bin is stabil.
+
+    Also, I chucked w_sorting for the mean time. I couldn't really get it to do what I wanted.  
+
+    The basic idea of the function is that it moves clusters which are abnormally high in comparison to the other plumes in a bin to a higher bin. 
+    Abnormally high is decided if the height percentile (defined by cluster_per) is higher than the plume height calculated from the percentile Uses height to determine if things should be bumped up. 
+   
+    An important limitation is that the height of the plume of a specific size bin can not be lower than that of a smaller bin size. 
+
+    Function was originally derived from the full reconstruction plot function in a hurry in time for the paracon workshop, which explains a lot of its naming. In it's current format it is stabil, but takes a while. 
+
+    IMPORTANT:
+    -The method used to determine the plume height is a function of the total area of all plumes in a bin. For the smallest bin size this can be a problem, because the clustering detects very many small plumes close to the surface with a big area. This can be adressed by first filtering out all plumes which do not reach until a certain height, which will in turn undersample close to the surface.
+
+    -Despite the amount of time I have spent toying around with this function, it really is only a vary crude tool. Do not read to much into it. 
     
     Parameters:
-        max_bin: Number of bins
-        prof_height: profile variable to determine plume height from
-        percentile: percentile used to determine height from prof_height variable
-        precribed_width: defines bin width
-        t_window: time before and after which are included in the average in seconds, makes for a smoother height value
-        plume_min: numbers of plumes needed for the height to be able to be determined. If not fulfilled height is zero, all plumes start to high for that bin. This isn't great
+        max_bin:            Number of bins
+        percentile:         percentile used to determine height from prof_height variable
+        precribed_width:    defines bin width
+        t_window:           time before and after which are included in the average in seconds, makes for a smoother height value
+        plume_min:          numbers of plumes needed for the height to be able to be determined. If not fulfilled height is super heigh, all plumes remain in that bin. This isn't great
+        bin_var:            variable used to sort into bins. Default is 'sq Area' 
+        cluster_per:        Determines which plume area percentile a cluster can be above the plume "height" before it is moved to the next plume. 
     
     Returns:
-        bin_n, bins,bin_ind,csd: same as the linear binner. 
+        bin_n, bins,bin_ind: same as the linear binner, but with no size distribution as it doesn't really make sense..
     """
     
-    plume_sq_Area = clus_prop['sq Area']
+    
+    plume_init_bin = clus_prop[bin_var]
     prof_height = 'Area profile'
 
     #determining bin width using the 99.9th percentile
-    max_var = np.percentile(plume_sq_Area,99.9)
+    max_var = np.percentile(plume_init_bin,99.9)
     bin_width = round_down(max_var/max_bin)
     print('bin_width:',bin_width)
     if prescribed_width>0:
@@ -807,7 +825,7 @@ def func_A_base_binner(clus_prop,max_bin=5,prescribed_width=0,percentile=80.,t_w
         print('bin_width override:',bin_width)
 
 
-    bin_n, bins, bin_ind, csd = linear_binner(bin_width,plume_sq_Area)
+    bin_n, bins, bin_ind, csd = linear_binner(bin_width,plume_init_bin)
 
 
     time_vec = np.unique(clus_prop['time'])
@@ -817,57 +835,82 @@ def func_A_base_binner(clus_prop,max_bin=5,prescribed_width=0,percentile=80.,t_w
 
     prof_z=np.linspace(0,n_z*dz,n_z)+dz/2.
 
-    #Creating height matrix to enable plotting it later on
+    #Calculating height percentile of clusters used later on to determine if clusters are too high. 
+    tmp_array = np.zeros(len(clus_prop))
+    print('calculating per height')
+    for i in range(len(clus_prop)):
+        #I use the cheap alternative to Area_percentile_x to speed things up. 
+        tmp_array[i]=Area_percentile_cheap(prof_z,clus_prop['Area profile'].iloc[i],cluster_per)
+
+    #Now a quick fix for all clusters which have only a single horizontal layer
+    idx_singlelayer =   np.where(clus_prop['height']==dz)[0]
+    tmp_array[idx_singlelayer] = clus_prop['base'].iloc[idx_singlelayer]+dz*cluster_per/100.
+    clus_prop['per height'] = tmp_array
+
+    del(tmp_array)
+    print('done calculating per height')
+    
+    
+    #Plan is to iterate through the bins, moving things up until nothing happens anymore. 
+    clus_prop['weighted w'] = clus_prop['Area profile']*clus_prop['w profile']                  
+    
+    #Creating height matrix
     plume_height = np.zeros([max_bin,t_steps])
-    plume_x      = np.zeros([max_bin,t_steps])
-    
-    #Creating bin, time, z profile  matrix to pass back when desired
-    plume_profiles_btz = np.zeros([max_bin,t_steps,n_z])
     
     
-    #Ok, now that the Area binning is ready, we calculate the height for each bin at each time step
+    #Ok, now that the Area binning is ready, we begin by iterating over each time step
 
-    for b in range(max_bin):
+    t_iterable = np.arange(t_steps).astype(int)
+    for t in t_iterable:
+        #expanding to include a time window before and after. First calculating t difference to current timestep
+        delta_t = abs((clus_prop['time']-time_vec[t])/np.timedelta64(1, 's'))
 
-        clus_tmp = clus_prop.iloc[bin_ind==b+1]
-        t_iterable = np.arange(t_steps).astype(int)
-        for t in t_iterable:
-            #expanding to include a time window before and after. First calculating t difference to current timestep
-            delta_t = abs((clus_tmp['time']-time_vec[t])/np.timedelta64(1, 's'))
+        for b in range(max_bin):
+            bump_iteration = 1 #Is set to zero when nothing more to bump up
 
-            idx_time = np.where(delta_t<=t_window)[0] 
-            clus_tmp_t = clus_tmp.iloc[idx_time]
+            while bump_iteration>0:
+                index_select =np.where(np.logical_and(bin_ind==b+1,delta_t<=t_window))[0] 
+                clus_tmp = clus_prop.iloc[index_select]
 
-            if len(idx_time)>plume_min:
-                
-                #Getting height according to percentile at 1 m percision using linear interpolation 
-                prof_sum_height = func_prof_sum(clus_tmp_t,prof_height,n_z)
-                
-                z_percentile=Area_percentile_x(prof_z,prof_sum_height,percentile)
-                z_scaled = z_percentile*100./percentile
-                
-                # Saving height data to plot later on
-                plume_height[b,t] = z_scaled
+                if len(clus_tmp)>plume_min:
+                    
+                    #Getting height according to percentile at 1 m percision using linear interpolation 
+                    prof_sum_height = func_prof_sum(clus_tmp,prof_height,n_z)
+                    
+                    z_percentile    = Area_percentile_x(prof_z,prof_sum_height,percentile)
+                    z_scaled = z_percentile*100./percentile
+                    
+                    if b>0 and z_scaled<plume_height[b-1,t]:
+                        plume_height[b,t] = plume_height[b-1,t]
+                        #print('WARNING, plume hight being boosted to thinner plume')
+                    else:
+                        plume_height[b,t] = z_scaled
+                    
+                    
+                    #Now we have the plume height, time to bump shit up according to the cluster vs plume height.
+                    bump_up_idx = np.where((bin_ind==b+1) & (clus_prop['time']==time_vec[t]) & ((clus_prop['per height'])>plume_height[b,t]))[0]
+                    
+                    if bump_up_idx.size>0:
+                        bin_ind[bump_up_idx] = bin_ind[bump_up_idx] + 1
+                        #print(bump_up_idx)
+                        #print('bump iteration, t, b, n bump, bump it',t,b,bump_up_idx.size,bump_iteration)
+                        #print('plume height and number',z_scaled,len(clus_tmp))
+                        #print('clus_tmp size',len(clus_tmp))
+                        bump_iteration += 1
+                    else:
+                        #print('FINAL HEIGHT ',plume_height[b,t],' bin: ',t,b, ' iterations ',bump_iteration-1)
+                        bump_iteration = 0
 
-    #So now we have plume height, now we go through the plumes and move all plumes which are too high to the according bin. 
-    for b in range(max_bin):
-        for t in t_iterable:
-            #bump_up_idx = np.where((bin_ind==b+1) & (clus_prop['time']==time_vec[t]) & (clus_prop['base']>plume_height[b,t]))
-            #lets try making it more restrictibe, namely if half the plume is above the detected height
-            bump_up_idx = np.where((bin_ind==b+1) & (clus_prop['time']==time_vec[t]) & ((clus_prop['base']+clus_prop['height']/2)>plume_height[b,t]))
-            #print(b,t,bump_up_idx)
-            bin_ind[bump_up_idx] = bin_ind[bump_up_idx] + 1
 
 
 
-    #And then we have to recalculated the size distribution         
-    for b in range(bin_n):
-        if len(bin_ind[bin_ind==b+1])>plume_min:
-            csd[b] = float(np.count_nonzero(bin_ind==b+1))/(bins[b+1]-bins[b])
-        else:
-            csd[b] = 'nan'
+                else:
+                    plume_height[b,t] = n_z*dz
+                    bump_iteration =0
 
-    return bin_n, bins,bin_ind,csd
+
+
+    return bin_n, bins,bin_ind
 
 ################################################################################################
 #Random small stuff
@@ -1118,3 +1161,166 @@ def label_axes_abcd(fig, labels=None, loc=None, **kwargs):
 #
 #    return cloud_idx_list,idx_cloudy_cells 
 #
+#def func_A_base_binner(clus_prop,max_bin=5,prescribed_width=0,percentile=80.,t_window=0,
+#                                  plume_min=1,n_z=256,dz=25,w_sorting_flag=0,z_sorting_flag=1,bin_var='sq Area'):
+#    """     
+#    A binner that first uses a linear area binner as a first guess, and then bumps high plumes up a bin
+#   
+#    z_sorting_flag ==1:
+#    Uses height to determine if things should be bumped up. 
+#    The precise definition of what constitutes too high is very arbitrary. Current version uses when
+#    the middle plume height is higher than the calculated height of the plume bin.
+#    
+#    If w_sorting_flag = 1:
+#    After applying the height limiter it sorts all plumes that have a "too high" vertical velocity into a higher bin. 
+#    Too high is of course also super arbitrary
+#    Ideas: if plume vertical velocity above the binned mean plume height is higher than the mean plume velocity below. 
+#    Very much under construction!
+#   
+#    
+#    Function was derived from the full reconstruction plot function in a hurry in time for the paracon workshop, which explains a lot of its naming. 
+#    
+#    Parameters:
+#        max_bin:            Number of bins
+#        w_sorting_flag:     0: nothing, 1: move plumes which are too fast at plume height
+#        z_sorting_flag:     0: nothing, 1: move plumes which are too high  
+#        percentile:         percentile used to determine height from prof_height variable
+#        precribed_width:    defines bin width
+#        t_window:           time before and after which are included in the average in seconds, makes for a smoother height value
+#        plume_min:          numbers of plumes needed for the height to be able to be determined. If not fulfilled height is super heigh, all plumes remain in that bin. This isn't great
+#        bin_var:            variable used to sort into bins. Default is 'sq Area' 
+#    
+#    Returns:
+#        bin_n, bins,bin_ind,csd: same as the linear binner. 
+#    """
+#    
+#    
+#    plume_init_bin = clus_prop[bin_var]
+#    prof_height = 'Area profile'
+#
+#    #determining bin width using the 99.9th percentile
+#    max_var = np.percentile(plume_init_bin,99.9)
+#    bin_width = round_down(max_var/max_bin)
+#    print('bin_width:',bin_width)
+#    if prescribed_width>0:
+#        bin_width = prescribed_width
+#        print('bin_width override:',bin_width)
+#
+#
+#    bin_n, bins, bin_ind, csd = linear_binner(bin_width,plume_init_bin)
+#
+#
+#    time_vec = np.unique(clus_prop['time'])
+#
+#    #limiting t_steps to avoid issues
+#    t_steps = len(time_vec)
+#
+#    prof_z=np.linspace(0,n_z*dz,n_z)+dz/2.
+#
+#    
+#    
+#    #We are turning this into a loop to see if it converges.
+#
+#    clus_prop['weighted w'] = clus_prop['Area profile']*clus_prop['w profile']                  
+#    for i in range(5):
+#    
+#      #Creating height matrix used for height filtering
+#      plume_height = np.zeros([max_bin,t_steps])
+#      
+#      #Creating w matrix for w filtering
+#      plume_w_below_height = np.zeros([max_bin,t_steps])
+#
+#      
+#      
+#      #Ok, now that the Area binning is ready, we calculate the height for each bin at each time step
+#
+#      for b in range(max_bin):
+#
+#          clus_tmp = clus_prop.iloc[bin_ind==b+1]
+#          t_iterable = np.arange(t_steps).astype(int)
+#          for t in t_iterable:
+#              #expanding to include a time window before and after. First calculating t difference to current timestep
+#              delta_t = abs((clus_tmp['time']-time_vec[t])/np.timedelta64(1, 's'))
+#
+#              idx_time = np.where(delta_t<=t_window)[0] 
+#              clus_tmp_t = clus_tmp.iloc[idx_time]
+#
+#              if len(idx_time)>plume_min:
+#                  
+#                  #Getting height according to percentile at 1 m percision using linear interpolation 
+#                  prof_sum_height = func_prof_sum(clus_tmp_t,prof_height,n_z)
+#                  
+#                  z_percentile    = Area_percentile_x(prof_z,prof_sum_height,percentile)
+#                  z_scaled = z_percentile*100./percentile
+#                  
+#                  plume_height[b,t] = z_scaled
+#                  
+#                  #adding an additional trick, if the smaller bin is higher, we set it to the same height as the current bin
+#                  if b>0 and  plume_height[b-1,t]>plume_height[b,t]:
+#                      #print('bin height correction activated in ',b,t)
+#                      plume_height[b-1,t] = plume_height[b,t]
+#                  
+#                  prof_mean_w_area_weighted = func_prof_sum(clus_tmp_t,'weighted w',n_z)/func_prof_sum(clus_tmp_t,'Area profile',n_z)
+#                  #func_prof_mean(clus_tmp_t,'w profile',n_z)
+#                  #print('w below height',prof_mean_w_area_weighted,b,t)
+#
+#                  #So the new new idea is to move up plumes which are higher than where the area weighted mean becomes negative 
+#                  #plume_w_below_height[b,t]=np.nanmean(prof_mean_w[:int(z_scaled/dz)])
+#                  if np.nanmin(prof_mean_w_area_weighted)<0: 
+#                      plume_w_below_height[b,t]=np.where(prof_mean_w_area_weighted<0)[0][0]*dz
+#                      #print('w below height',np.where(prof_mean_w_area_weighted<0)[0][0],b,t)
+#                  else:
+#                      plume_w_below_height[b,t]=n_z*dz
+#
+#
+#
+#              else:
+#                  plume_height[b,t] = n_z*dz
+#                  plume_w_below_height[b,t] = 100.
+#
+#      #if w_sorting_flag ==1:
+#      #    print('plume_w_below b=0 ',plume_w_below_height[0,:])
+#      #    w_matrix = np.vstack(clus_prop['w profile'].values)
+#
+#      for b in range(max_bin):
+#          for t in t_iterable:
+#              #bump_up_idx = np.where((bin_ind==b+1) & (clus_prop['time']==time_vec[t]) & (clus_prop['base']>plume_height[b,t]))
+#              #lets try making it more restrictibe, namely if half the plume is above the detected height
+#              if z_sorting_flag==1:
+#              
+#                  #This is more aggresive, bumps clusters up when their mean height is above the plume height. 
+#                  bump_up_idx = np.where((bin_ind==b+1) & (clus_prop['time']==time_vec[t]) & ((clus_prop['base']+clus_prop['height']/2)>plume_height[b,t]))
+#                  
+#                  #This only bumps up when the base of the cluster is above the plume height
+#                  #bump_up_idx = np.where((bin_ind==b+1) & (clus_prop['time']==time_vec[t]) & ((clus_prop['base'])>plume_height[b,t]))
+#                  #print(b,t,bump_up_idx)
+#                  bin_ind[bump_up_idx] = bin_ind[bump_up_idx] + 1
+#              
+#              
+#              if w_sorting_flag==1:
+#                  bump_up_idx = np.where((bin_ind==b+1) & (clus_prop['time']==time_vec[t]) & (clus_prop['base']>plume_w_below_height[b,t]))
+#                  
+#                  #print(b,t,bump_up_idx) 
+#                  #if len(bump_up_idx)>1:
+#                  print('w bump',b,t,len(bump_up_idx[0]))
+#                  bin_ind[bump_up_idx] = bin_ind[bump_up_idx] + 1
+#                  #z_idx = int(plume_height[b,t]/dz) 
+#                  #bump_up_idx = np.where((bin_ind==b+1) & (clus_prop['time']==time_vec[t]) & ((clus_prop['base'])>plume_height[b,t]))
+#                  #if z_idx<n_z:
+#                      #bump_up_idx = np.where((bin_ind==b+1) & (clus_prop['time']==time_vec[t]) & (w_matrix[:,z_idx]>plume_w_below_height[b,t]))
+#                      #print(b,t,bump_up_idx,plume_w_below_height[b,t])
+#                      
+#                      #bin_ind[bump_up_idx] = bin_ind[bump_up_idx] + 1
+#    
+#
+#
+#
+#
+#    #And then we have to recalculated the size distribution         
+#    for b in range(bin_n):
+#        if len(bin_ind[bin_ind==b+1])>plume_min:
+#            csd[b] = float(np.count_nonzero(bin_ind==b+1))/(bins[b+1]-bins[b])
+#        else:
+#            csd[b] = 'nan'
+#
+#    return bin_n, bins,bin_ind,csd
